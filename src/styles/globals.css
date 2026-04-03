@@ -1,0 +1,35 @@
+@import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700&family=Work+Sans:wght@300;600;700&display=swap');
+@import "tailwindcss";
+
+:root {
+  --hsf-light: #EDE9FF;
+  --hsf-accent: #A792FF;
+  --hsf-text: #1A1A1A;
+  --hsf-purple: #4A0E99;
+  --hsf-cyan: #2182BF;
+  --hsf-pale: #D3E6F2;
+  --hsf-deep: #092130;
+  --hsf-mid: #114160;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  font-family: 'Open Sans', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+  color: var(--hsf-text);
+  background: var(--hsf-light);
+}
+
+.hsf-gradient {
+  background: linear-gradient(135deg, var(--hsf-accent) 0%, var(--hsf-purple) 60%);
+}
+
+.hsf-card {
+  background: white;
+  border-radius: 1rem;
+  box-shadow: 0 6px 20px rgba(16,24,40,0.06);
+}
+
+.hsf-heading { font-family: 'Work Sans', 'Open Sans', sans-serif; }
