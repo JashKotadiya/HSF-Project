@@ -1,0 +1,62 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnp.js
+.pnp/
+
+# Next.js
+.next/
+out/
+.next/cache
+
+# Build outputs
+dist/
+build/
+
+# Environment
+.env
+.env.*
+.env.local
+
+# Editor directories and files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+logs/
+*.log
+
+# Test coverage
+coverage/
+
+# Turborepo
+.turbo/
+
+# Misc
+.cache/
+
+# Optional static assets
+/public/static/
+
+# Local configs
+*.local
+
+# JetBrains
+*.iml
+
+# Other lockfiles (only if not used)
+pnpm-lock.yaml
+
+# VS Code remote
+.vscode-server/
