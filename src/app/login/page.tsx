@@ -6,7 +6,7 @@ import supabase from "../../lib/supabase";
 
 type UserRole = "nonprofit" | "volunteer";
 
-export default function LoginPage(): JSX.Element {
+export default function LoginPage() {
   const router = useRouter();
 
   const [email, setEmail] = useState("");

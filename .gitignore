@@ -1,34 +1,68 @@
-# dependencies
-/node_modules
-
-# next.js build output
-/.next
-/out
-
-# production
-/build
-
-# environment variables
-.env
-.env.local
-.env.development
-.env.production
-
-# logs
+# Node
+node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+.pnp.js
+.pnp/
+
+# Next.js
+.next/
+out/
+.next/cache
+
+# Build outputs
+dist/
+build/
+
+# Environment
+.env
+.env.*
+.env.local
+.env.development
+.env.production
+
+# Editor directories and files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
 
 # OS files
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# vscode
-.vscode
-
-# misc
+# Logs
+logs/
 *.log
 
-# supabase (optional local files if any)
+# Test coverage
+coverage/
+
+# Turborepo
+.turbo/
+
+# Misc
+.cache/
+
+# Optional static assets
+/public/static/
+
+# Local configs
+*.local
+
+# JetBrains
+*.iml
+
+# Other lockfiles (only if not used)
+pnpm-lock.yaml
+
+# VS Code remote
+.vscode-server/
+
+# Supabase (optional local files)
 .supabase

@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import supabase from "../../lib/supabase";
 
-export default function SignupPage(): JSX.Element {
+export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<"nonprofit" | "volunteer">("volunteer");
