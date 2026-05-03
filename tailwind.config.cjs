@@ -16,9 +16,17 @@ module.exports = {
         }
       },
       fontFamily: {
-        sans: ['Open Sans', 'ui-sans-serif', 'system-ui'],
-        work: ['Work Sans', 'ui-sans-serif', 'system-ui']
-      }
+        sans: [
+          'var(--font-open-sans)',
+          'ui-sans-serif',
+          'system-ui',
+        ],
+        work: [
+          'var(--font-work-sans)',
+          'ui-sans-serif',
+          'system-ui',
+        ],
+      },
     }
   },
   plugins: []

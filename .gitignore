@@ -3,6 +3,7 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 .pnp.js
 .pnp/
 
@@ -19,6 +20,8 @@ build/
 .env
 .env.*
 .env.local
+.env.development
+.env.production
 
 # Editor directories and files
 .vscode/
@@ -60,3 +63,6 @@ pnpm-lock.yaml
 
 # VS Code remote
 .vscode-server/
+
+# Supabase (optional local files)
+.supabase
