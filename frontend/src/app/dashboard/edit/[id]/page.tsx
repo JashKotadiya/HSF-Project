@@ -58,6 +58,10 @@ export default function EditPost() {
         router.push('/');
         return;
       }
+      if (session.user?.user_metadata?.role === 'volunteer') {
+        router.push('/volunteer');
+        return;
+      }
       
       const { data, error } = await supabase
         .from('posts')

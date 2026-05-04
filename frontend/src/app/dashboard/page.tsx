@@ -103,6 +103,10 @@ export default function Dashboard() {
         router.push('/');
         return;
       }
+      if (session.user?.user_metadata?.role === 'volunteer') {
+        router.push('/volunteer');
+        return;
+      }
       setSessionToken(session.access_token);
       
       const user = session.user;
