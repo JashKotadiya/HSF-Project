@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import {
@@ -19,16 +19,41 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
-    const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+    const run = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get('code');
+      const oauthError = params.get('error_description') ?? params.get('error');
+
+      if (oauthError) {
+        setError(oauthError);
+        window.history.replaceState(null, '', '/');
+        return;
+      }
+
+      // Email confirmation / OAuth (PKCE): Supabase redirects here with ?code=...
+      if (code) {
+        const { error: exchangeError } =
+          await supabase.auth.exchangeCodeForSession(window.location.href);
+        if (exchangeError) {
+          setError(exchangeError.message);
+          return;
+        }
+        window.history.replaceState(null, '', '/');
+        router.replace('/dashboard');
+        return;
+      }
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (session) {
         router.push('/dashboard');
       }
     };
-    checkSession();
+    void run();
   }, [router, supabase]);
 
   const handleLogin = async (e: React.FormEvent) => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
@@ -14,6 +14,7 @@ import {
   IconButton,
   AppBar,
   Toolbar,
+  Alert,
   Skeleton,
   Dialog,
   DialogTitle,
@@ -48,35 +49,48 @@ type PendingAction =
   | { type: 'row_status', postId: string, status: string }
   | null;
 
+function getBackendBaseUrl(): string {
+  return (
+    process.env.NEXT_PUBLIC_BACKEND_URL?.trim() || 'http://localhost:8000'
+  );
+}
+
 export default function Dashboard() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [userName, setUserName] = useState<string>('User');
+  const [backendError, setBackendError] = useState<string | null>(null);
   
   // Confirmation Dialog State
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
 
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   const fetchPosts = useCallback(async (token: string) => {
+    const backendUrl = getBackendBaseUrl();
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
       const res = await fetch(`${backendUrl}/posts`, {
         headers: {
-          'Authorization': `Bearer ${token}`
-        }
+          Authorization: `Bearer ${token}`,
+        },
       });
       if (res.ok) {
         const data = await res.json();
         setPosts(data);
+        setBackendError(null);
       } else {
-        console.error('Failed to fetch posts');
+        setBackendError(
+          `Posts API returned ${res.status}. Is the backend running at ${backendUrl}?`
+        );
       }
-    } catch (err) {
-      console.error(err);
+    } catch {
+      // Safari often logs this as "TypeError: Load failed" (connection refused / wrong host).
+      setBackendError(
+        `Cannot reach the API at ${backendUrl}. Start the FastAPI server (e.g. uvicorn in backend/) or set NEXT_PUBLIC_BACKEND_URL if you use a different host/port.`
+      );
     } finally {
       setLoading(false);
     }
@@ -99,7 +113,7 @@ export default function Dashboard() {
 
       fetchPosts(session.access_token);
     };
-    checkAuthAndFetch();
+    void checkAuthAndFetch();
   }, [router, supabase, fetchPosts]);
 
   const handleSignOut = async () => {
@@ -113,7 +127,7 @@ export default function Dashboard() {
     setPosts(prev => prev.map(p => p.id === postId ? { ...p, status: newStatus as any } : p));
 
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+      const backendUrl = getBackendBaseUrl();
       const res = await fetch(`${backendUrl}/posts/${postId}/status`, {
         method: 'PATCH',
         headers: {
@@ -181,6 +195,11 @@ export default function Dashboard() {
       </AppBar>
 
       <Container maxWidth="xl" sx={{ mt: 6, mb: 6, flexGrow: 1 }}>
+        {backendError && (
+          <Alert severity="warning" sx={{ mb: 3 }} onClose={() => setBackendError(null)}>
+            {backendError}
+          </Alert>
+        )}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
           <Typography variant="h4" color="text.primary" sx={{ fontWeight: 700 }}>
             Dashboard

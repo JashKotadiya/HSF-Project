@@ -1,11 +1,15 @@
-from fastapi import FastAPI, Header, HTTPException, Depends
-from fastapi.middleware.cors import CORSMiddleware
-from supabase import create_client, Client
-from pydantic import BaseModel
-import os
-from dotenv import load_dotenv
+from pathlib import Path
 
-load_dotenv()
+from dotenv import load_dotenv
+from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from supabase import Client, create_client
+import os
+
+# Always load backend/.env (cwd is not always the backend folder when using uvicorn).
+_BACKEND_DIR = Path(__file__).resolve().parent
+load_dotenv(_BACKEND_DIR / ".env")
 
 app = FastAPI()
 
@@ -17,15 +21,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+SUPABASE_URL = (
+    os.environ.get("SUPABASE_URL") or os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or ""
+).strip()
+SUPABASE_KEY = (
+    os.environ.get("SUPABASE_KEY") or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY") or ""
+).strip()
 
 if not SUPABASE_URL or not SUPABASE_KEY:
-    print("Warning: SUPABASE_URL and SUPABASE_KEY must be set in .env")
-
-# To bypass RLS via server-side logic when needed we could use the service_role key, 
-# but here we'll instantiate clients dynamically with the user's token for RLS.
-supabase_anon: Client = create_client(SUPABASE_URL or "", SUPABASE_KEY or "")
+    raise RuntimeError(
+        f"Missing SUPABASE_URL and SUPABASE_KEY (or NEXT_PUBLIC_* equivalents). "
+        f"Set them in {_BACKEND_DIR / '.env'} — see .env.example."
+    )
 
 def get_supabase(authorization: str = Header(None)) -> Client:
     if not authorization:
