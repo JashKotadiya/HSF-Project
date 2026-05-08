@@ -2,20 +2,18 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import {
-  Container,
-  Box,
-  Typography,
-  Button,
-  Card,
-  CardContent,
-  Chip,
-  Skeleton,
-  InputAdornment,
-  TextField,
-  Divider,
-  Grid,
-} from '@mui/material';
+import Container from '@mui/material/Container';
+import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
+import Button from '@mui/material/Button';
+import Card from '@mui/material/Card';
+import CardContent from '@mui/material/CardContent';
+import Chip from '@mui/material/Chip';
+import Skeleton from '@mui/material/Skeleton';
+import InputAdornment from '@mui/material/InputAdornment';
+import TextField from '@mui/material/TextField';
+import Divider from '@mui/material/Divider';
+import Grid from '@mui/material/Grid';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import SearchIcon from '@mui/icons-material/Search';

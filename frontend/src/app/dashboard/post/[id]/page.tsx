@@ -4,10 +4,17 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
-import {
-  Container, Box, Typography, Button, Paper, Grid, Avatar,
-  Tabs, Tab, Divider, Chip
-} from '@mui/material';
+import Container from '@mui/material/Container';
+import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
+import Button from '@mui/material/Button';
+import Paper from '@mui/material/Paper';
+import Grid from '@mui/material/Grid';
+import Avatar from '@mui/material/Avatar';
+import Tabs from '@mui/material/Tabs';
+import Tab from '@mui/material/Tab';
+import Divider from '@mui/material/Divider';
+import Chip from '@mui/material/Chip';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import PersonIcon from '@mui/icons-material/Person';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
@@ -81,8 +88,8 @@ export default function ProjectDetailView() {
     setTabValue(newValue);
   };
 
-  if (loading) return <Box p={4}>Loading project...</Box>;
-  if (!post) return <Box p={4}>Project not found.</Box>;
+  if (loading) return <Box sx={{ p: 4 }}>Loading project...</Box>;
+  if (!post) return <Box sx={{ p: 4 }}>Project not found.</Box>;
 
   // Convert bullet point text areas into arrays
   const renderBullets = (text: string) => {
@@ -99,7 +106,7 @@ export default function ProjectDetailView() {
   const renderParagraphs = (text: string) => {
     if (!text) return null;
     return text.split('\n').map((line, i) => (
-      line.trim() ? <Typography key={i} variant="body1" color="#334155" sx={{ mb: 2 }}>{line.trim()}</Typography> : null
+      line.trim() ? <Typography key={i} variant="body1" sx={{ color: '#334155', mb: 2 }}>{line.trim()}</Typography> : null
     ));
   };
 
@@ -114,10 +121,10 @@ export default function ProjectDetailView() {
           
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <Box>
-              <Typography variant="h3" fontWeight={700} color="#0F172A" mb={1}>
+              <Typography sx={{ fontWeight: 700, color: '#0F172A', mb: 1 }} variant="h3">
                 {post.title}
               </Typography>
-              <Typography variant="h6" color="#475569" fontWeight={400} sx={{ maxWidth: '800px' }}>
+              <Typography variant="h6" sx={{ fontWeight: 400, color: '#475569', maxWidth: '800px' }}>
                 {post.content}
               </Typography>
             </Box>
@@ -154,7 +161,7 @@ export default function ProjectDetailView() {
                 border: '1px dashed #CBD5E1'
               }}
             >
-              <Typography color="#94A3B8" variant="h6">Banner Image Placeholder</Typography>
+              <Typography sx={{ color: '#94A3B8' }} variant="h6">Banner Image Placeholder</Typography>
             </Box>
 
             {/* TABS */}
@@ -170,25 +177,25 @@ export default function ProjectDetailView() {
             <CustomTabPanel value={tabValue} index={0}>
               {post.what_we_need && (
                 <Box sx={{ mb: 4 }}>
-                  <Typography variant="h6" fontWeight={700} color="#0F172A" mb={2}>What we need</Typography>
+                  <Typography sx={{ fontWeight: 700, color: '#0F172A', mb: 2 }} variant="h6">What we need</Typography>
                   {renderParagraphs(post.what_we_need)}
                 </Box>
               )}
               {post.additional_details && (
                 <Box sx={{ mb: 4 }}>
-                  <Typography variant="h6" fontWeight={700} color="#0F172A" mb={2}>Additional details</Typography>
+                  <Typography sx={{ fontWeight: 700, color: '#0F172A', mb: 2 }} variant="h6">Additional details</Typography>
                   {renderParagraphs(post.additional_details)}
                 </Box>
               )}
               {post.what_we_have_in_place && (
                 <Box sx={{ mb: 4 }}>
-                  <Typography variant="h6" fontWeight={700} color="#0F172A" mb={2}>What we have in place</Typography>
+                  <Typography sx={{ fontWeight: 700, color: '#0F172A', mb: 2 }} variant="h6">What we have in place</Typography>
                   {renderParagraphs(post.what_we_have_in_place)}
                 </Box>
               )}
               {post.how_this_will_help && (
                 <Box sx={{ mb: 4 }}>
-                  <Typography variant="h6" fontWeight={700} color="#0F172A" mb={2}>How this will help</Typography>
+                  <Typography sx={{ fontWeight: 700, color: '#0F172A', mb: 2 }} variant="h6">How this will help</Typography>
                   {renderParagraphs(post.how_this_will_help)}
                 </Box>
               )}
@@ -197,7 +204,7 @@ export default function ProjectDetailView() {
             {/* TAB 2: PLAN */}
             <CustomTabPanel value={tabValue} index={1}>
               {(!post.milestones || post.milestones.length === 0) ? (
-                <Typography color="text.secondary">No milestones defined.</Typography>
+                <Typography sx={{ color: 'text.secondary' }}>No milestones defined.</Typography>
               ) : (
                 <Box sx={{ position: 'relative', pl: 3 }}>
                   {/* Simple vertical line for timeline */}
@@ -216,7 +223,7 @@ export default function ProjectDetailView() {
                         {idx + 1}
                       </Box>
                       
-                      <Typography variant="h6" fontWeight={700} color="#0F172A" mb={1}>{m.title}</Typography>
+                      <Typography sx={{ fontWeight: 700, color: '#0F172A', mb: 1 }} variant="h6">{m.title}</Typography>
                       {renderBullets(m.details)}
                     </Box>
                   ))}
@@ -226,18 +233,18 @@ export default function ProjectDetailView() {
 
             {/* TAB 3: ABOUT */}
             <CustomTabPanel value={tabValue} index={2}>
-              <Grid container spacing={4} mb={4}>
+              <Grid sx={{ mb: 4 }} container spacing={4}>
                 <Grid size={{ xs: 6 }}>
-                  <Typography variant="subtitle1" fontWeight={700} color="#0F172A" mb={1}>Causes</Typography>
-                  {post.cause ? <Chip label={post.cause} variant="outlined" /> : <Typography color="text.secondary">Not specified</Typography>}
+                  <Typography sx={{ fontWeight: 700, color: '#0F172A', mb: 1 }} variant="subtitle1">Causes</Typography>
+                  {post.cause ? <Chip label={post.cause} variant="outlined" /> : <Typography sx={{ color: 'text.secondary' }}>Not specified</Typography>}
                 </Grid>
                 <Grid size={{ xs: 6 }}>
-                  <Typography variant="subtitle1" fontWeight={700} color="#0F172A" mb={1}>Posted by</Typography>
+                  <Typography sx={{ fontWeight: 700, color: '#0F172A', mb: 1 }} variant="subtitle1">Posted by</Typography>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                     <Avatar><PersonIcon /></Avatar>
                     <Box>
-                      <Typography variant="body1" fontWeight={600} color="#2563EB">{post.poster_name || 'User'}</Typography>
-                      <Typography variant="caption" color="text.secondary">Project Poster</Typography>
+                      <Typography sx={{ fontWeight: 600, color: '#2563EB' }} variant="body1">{post.poster_name || 'User'}</Typography>
+                      <Typography sx={{ color: 'text.secondary' }} variant="caption">Project Poster</Typography>
                     </Box>
                   </Box>
                 </Grid>
@@ -245,7 +252,7 @@ export default function ProjectDetailView() {
 
               {post.org_mission && (
                 <Box sx={{ mb: 4 }}>
-                  <Typography variant="h6" fontWeight={700} color="#0F172A" mb={2}>Our mission</Typography>
+                  <Typography sx={{ fontWeight: 700, color: '#0F172A', mb: 2 }} variant="h6">Our mission</Typography>
                   {renderParagraphs(post.org_mission)}
                 </Box>
               )}
@@ -258,20 +265,20 @@ export default function ProjectDetailView() {
             <Box sx={{ mb: 4 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 4 }}>
                 <Avatar sx={{ width: 64, height: 64, bgcolor: '#F1F5F9', color: '#64748B' }}>
-                  <Typography variant="h5" fontWeight={700}>{post.organization_name ? post.organization_name.charAt(0) : 'O'}</Typography>
+                  <Typography sx={{ fontWeight: 700 }} variant="h5">{post.organization_name ? post.organization_name.charAt(0) : 'O'}</Typography>
                 </Avatar>
                 <Box>
-                  <Typography variant="subtitle1" fontWeight={700} color="#0F172A">{post.organization_name || 'Organization Name'}</Typography>
-                  <Typography variant="body2" color="#64748B">{post.location || 'Location not specified'}</Typography>
+                  <Typography sx={{ fontWeight: 700, color: '#0F172A' }} variant="subtitle1">{post.organization_name || 'Organization Name'}</Typography>
+                  <Typography sx={{ color: '#64748B' }} variant="body2">{post.location || 'Location not specified'}</Typography>
                 </Box>
               </Box>
 
-              <Typography variant="subtitle2" color="#64748B" mb={1}>Cause</Typography>
+              <Typography sx={{ color: '#64748B', mb: 1 }} variant="subtitle2">Cause</Typography>
               <Box sx={{ mb: 3 }}>
                 {post.cause ? <Chip label={post.cause} variant="outlined" size="small" /> : '-'}
               </Box>
 
-              <Typography variant="subtitle2" color="#64748B" mb={1}>Skills</Typography>
+              <Typography sx={{ color: '#64748B', mb: 1 }} variant="subtitle2">Skills</Typography>
               <Box sx={{ mb: 4, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                 {post.skills_needed && post.skills_needed.length > 0 ? (
                   post.skills_needed.map((skill: string, i: number) => (
@@ -286,7 +293,7 @@ export default function ProjectDetailView() {
               </Box>
 
               <Paper sx={{ p: 2, bgcolor: '#FFEDD5', borderRadius: 1, border: 'none', textAlign: 'center' }}>
-                <Typography variant="body2" color="#9A3412">
+                <Typography sx={{ color: '#9A3412' }} variant="body2">
                   You are viewing your own post, so you cannot apply.
                 </Typography>
               </Paper>
@@ -295,14 +302,14 @@ export default function ProjectDetailView() {
             {/* Right Volunteer Widget (only shows on Details Tab) */}
             {tabValue === 0 && (
               <Paper sx={{ p: 3, bgcolor: '#F8FAFC', borderRadius: 2, border: 'none' }}>
-                <Typography variant="h6" fontWeight={700} color="#2563EB" mb={3}>The right volunteer</Typography>
+                <Typography sx={{ fontWeight: 700, color: '#2563EB', mb: 3 }} variant="h6">The right volunteer</Typography>
                 
-                <Typography variant="subtitle1" fontWeight={700} color="#0F172A" mb={1}>Skills & experience</Typography>
+                <Typography sx={{ fontWeight: 700, color: '#0F172A', mb: 1 }} variant="subtitle1">Skills & experience</Typography>
                 {renderBullets(post.volunteer_experience)}
                 
                 <Divider sx={{ my: 3 }} />
 
-                <Typography variant="subtitle1" fontWeight={700} color="#0F172A" mb={1}>Availability</Typography>
+                <Typography sx={{ fontWeight: 700, color: '#0F172A', mb: 1 }} variant="subtitle1">Availability</Typography>
                 {renderBullets(post.volunteer_availability)}
               </Paper>
             )}
@@ -310,8 +317,8 @@ export default function ProjectDetailView() {
             {/* Fun Fact Widget (only shows on About Tab) */}
             {tabValue === 2 && post.org_fun_fact && (
               <Paper sx={{ p: 3, bgcolor: '#FEF9C3', borderRadius: 2, border: 'none' }}>
-                <Typography variant="h6" fontWeight={700} color="#854D0E" mb={2}>✨ Fun Fact</Typography>
-                <Typography variant="body2" color="#713F12">
+                <Typography sx={{ fontWeight: 700, color: '#854D0E', mb: 2 }} variant="h6">✨ Fun Fact</Typography>
+                <Typography sx={{ color: '#713F12' }} variant="body2">
                   {post.org_fun_fact}
                 </Typography>
               </Paper>

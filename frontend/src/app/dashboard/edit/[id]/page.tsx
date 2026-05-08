@@ -4,11 +4,21 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
-import {
-  Container, Box, Typography, Button, TextField, FormControl,
-  InputLabel, Select, MenuItem, Paper, Grid, IconButton, Divider,
-  AppBar, Toolbar
-} from '@mui/material';
+import Container from '@mui/material/Container';
+import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
+import Button from '@mui/material/Button';
+import TextField from '@mui/material/TextField';
+import FormControl from '@mui/material/FormControl';
+import InputLabel from '@mui/material/InputLabel';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
+import Paper from '@mui/material/Paper';
+import Grid from '@mui/material/Grid';
+import IconButton from '@mui/material/IconButton';
+import Divider from '@mui/material/Divider';
+import AppBar from '@mui/material/AppBar';
+import Toolbar from '@mui/material/Toolbar';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -152,14 +162,14 @@ export default function EditPost() {
       </AppBar>
 
       <Container maxWidth="md" sx={{ mt: 4 }}>
-        <Typography variant="h4" fontWeight={700} color="#0F172A" mb={3}>
+        <Typography sx={{ fontWeight: 700, color: '#0F172A', mb: 3 }} variant="h4">
           {isNew ? 'Create New Project' : 'Edit Project Details'}
         </Typography>
 
         <Paper sx={{ p: 4, borderRadius: 3, border: '1px solid #E2E8F0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}>
           {/* BASIC INFO */}
-          <Typography variant="h6" fontWeight={600} color="#334155" mb={2}>Basic Information</Typography>
-          <Grid container spacing={2} mb={4}>
+          <Typography sx={{ fontWeight: 600, color: '#334155', mb: 2 }} variant="h6">Basic Information</Typography>
+          <Grid sx={{ mb: 4 }} container spacing={2}>
             <Grid size={{ xs: 12 }}>
               <TextField fullWidth label="Project Title" value={title} onChange={e => setTitle(e.target.value)} required />
             </Grid>
@@ -183,8 +193,8 @@ export default function EditPost() {
           <Divider sx={{ mb: 4 }} />
 
           {/* ORG INFO */}
-          <Typography variant="h6" fontWeight={600} color="#334155" mb={2}>Organization Details</Typography>
-          <Grid container spacing={2} mb={4}>
+          <Typography sx={{ fontWeight: 600, color: '#334155', mb: 2 }} variant="h6">Organization Details</Typography>
+          <Grid sx={{ mb: 4 }} container spacing={2}>
             <Grid size={{ xs: 12, sm: 6 }}>
               <TextField fullWidth label="Organization Name" value={orgName} onChange={e => setOrgName(e.target.value)} />
             </Grid>
@@ -195,7 +205,7 @@ export default function EditPost() {
               <TextField fullWidth label="Cause (e.g. Human Services)" value={cause} onChange={e => setCause(e.target.value)} />
             </Grid>
           </Grid>
-          <Grid container spacing={2} mb={4}>
+          <Grid sx={{ mb: 4 }} container spacing={2}>
             <Grid size={{ xs: 12 }}>
               <TextField fullWidth label="Our Mission" multiline rows={2} value={orgMission} onChange={e => setOrgMission(e.target.value)} />
             </Grid>
@@ -206,8 +216,8 @@ export default function EditPost() {
           <Divider sx={{ mb: 4 }} />
 
           {/* PROJECT DETAILS */}
-          <Typography variant="h6" fontWeight={600} color="#334155" mb={2}>Project Details Tab</Typography>
-          <Grid container spacing={2} mb={4}>
+          <Typography sx={{ fontWeight: 600, color: '#334155', mb: 2 }} variant="h6">Project Details Tab</Typography>
+          <Grid sx={{ mb: 4 }} container spacing={2}>
             <Grid size={{ xs: 12 }}>
               <TextField fullWidth label="What we need" multiline rows={3} value={whatWeNeed} onChange={e => setWhatWeNeed(e.target.value)} />
             </Grid>
@@ -224,8 +234,8 @@ export default function EditPost() {
           <Divider sx={{ mb: 4 }} />
 
           {/* THE RIGHT VOLUNTEER */}
-          <Typography variant="h6" fontWeight={600} color="#334155" mb={2}>The Right Volunteer</Typography>
-          <Grid container spacing={2} mb={2}>
+          <Typography sx={{ fontWeight: 600, color: '#334155', mb: 2 }} variant="h6">The Right Volunteer</Typography>
+          <Grid sx={{ mb: 2 }} container spacing={2}>
             <Grid size={{ xs: 12 }}>
               <TextField fullWidth label="Volunteer Experience Needed (Bullet points)" multiline rows={3} value={volExperience} onChange={e => setVolExperience(e.target.value)} />
             </Grid>
@@ -235,7 +245,7 @@ export default function EditPost() {
           </Grid>
           
           <Box sx={{ mb: 4 }}>
-            <Typography variant="subtitle2" color="#64748B" mb={1}>Skills Needed</Typography>
+            <Typography sx={{ color: '#64748B', mb: 1 }} variant="subtitle2">Skills Needed</Typography>
             {skills.map((skill, index) => (
               <Box key={index} sx={{ display: 'flex', gap: 1, mb: 1 }}>
                 <TextField 
@@ -256,12 +266,12 @@ export default function EditPost() {
           <Divider sx={{ mb: 4 }} />
 
           {/* PROJECT PLAN MILESTONES */}
-          <Typography variant="h6" fontWeight={600} color="#334155" mb={2}>Project Plan (Milestones)</Typography>
+          <Typography sx={{ fontWeight: 600, color: '#334155', mb: 2 }} variant="h6">Project Plan (Milestones)</Typography>
           <Box sx={{ mb: 4 }}>
             {milestones.map((m, index) => (
               <Box key={index} sx={{ p: 2, mb: 2, border: '1px solid #E2E8F0', borderRadius: 2, bgcolor: '#F8FAFC' }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                  <Typography variant="subtitle2" fontWeight={600}>Milestone {index + 1}</Typography>
+                  <Typography sx={{ fontWeight: 600 }} variant="subtitle2">Milestone {index + 1}</Typography>
                   <IconButton size="small" onClick={() => setMilestones(milestones.filter((_, i) => i !== index))} color="error">
                     <DeleteIcon />
                   </IconButton>

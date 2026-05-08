@@ -4,31 +4,29 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
-import {
-  Container,
-  Box,
-  Typography,
-  Button,
-  Menu,
-  MenuItem,
-  IconButton,
-  AppBar,
-  Toolbar,
-  Alert,
-  Skeleton,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogContentText,
-  DialogActions,
-  Grid,
-  Card,
-  CardContent,
-  Avatar,
-  Divider,
-  Paper,
-  CardActionArea
-} from '@mui/material';
+import Container from '@mui/material/Container';
+import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
+import Button from '@mui/material/Button';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
+import IconButton from '@mui/material/IconButton';
+import AppBar from '@mui/material/AppBar';
+import Toolbar from '@mui/material/Toolbar';
+import Alert from '@mui/material/Alert';
+import Skeleton from '@mui/material/Skeleton';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogContentText from '@mui/material/DialogContentText';
+import DialogActions from '@mui/material/DialogActions';
+import Grid from '@mui/material/Grid';
+import Card from '@mui/material/Card';
+import CardContent from '@mui/material/CardContent';
+import Avatar from '@mui/material/Avatar';
+import Divider from '@mui/material/Divider';
+import Paper from '@mui/material/Paper';
+import CardActionArea from '@mui/material/CardActionArea';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import AddIcon from '@mui/icons-material/Add';
 import PersonIcon from '@mui/icons-material/Person';
@@ -205,18 +203,28 @@ export default function Dashboard() {
           </Alert>
         )}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-          <Typography variant="h4" color="text.primary" sx={{ fontWeight: 700 }}>
+          <Typography variant="h4" sx={{ color: 'text.primary', fontWeight: 700 }}>
             Dashboard
           </Typography>
-          <Button 
-            variant="contained" 
-            color="secondary" 
-            startIcon={<AddIcon />}
-            component={Link}
-            href="/dashboard/edit/new"
-          >
-            Create Post
-          </Button>
+          <Box>
+            <Button 
+              variant="outlined" 
+              component={Link} 
+              href="/dashboard/applicants" 
+              sx={{ mr: 2 }}
+            >
+              Review Applications
+            </Button>
+            <Button 
+              variant="contained" 
+              color="secondary" 
+              startIcon={<AddIcon />}
+              component={Link}
+              href="/dashboard/edit/new"
+            >
+              Create Post
+            </Button>
+          </Box>
         </Box>
 
         {loading ? (
@@ -229,10 +237,10 @@ export default function Dashboard() {
           </Grid>
         ) : posts.length === 0 ? (
           <Paper sx={{ py: 8, textAlign: 'center', borderRadius: 3, bgcolor: '#F8FAFC', border: '1px dashed #CBD5E1', boxShadow: 'none' }}>
-            <Typography variant="h6" color="text.secondary" gutterBottom>
+            <Typography sx={{ color: 'text.secondary' }} variant="h6" gutterBottom>
               No projects found
             </Typography>
-            <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+            <Typography variant="body1" sx={{ color: 'text.secondary', mb: 3 }}>
               Create your first project to get started!
             </Typography>
             <Button variant="outlined" color="primary" component={Link} href="/dashboard/edit/new">
@@ -337,8 +345,8 @@ function PostCard({ post, userName, onDelete, onStatusChange }: {
     setAnchorEl(event.currentTarget);
   };
   
-  const handleClose = (event?: React.MouseEvent) => {
-    if (event) {
+  const handleClose = (event?: any) => {
+    if (event && event.stopPropagation) {
       event.stopPropagation();
       event.preventDefault();
     }
