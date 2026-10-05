@@ -3,19 +3,23 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import {
-  Container,
-  Box,
-  Typography,
-  TextField,
-  Button,
-  Paper,
-  Alert,
-} from '@mui/material';
+import Container from '@mui/material/Container';
+import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
+import TextField from '@mui/material/TextField';
+import Button from '@mui/material/Button';
+import Paper from '@mui/material/Paper';
+import Alert from '@mui/material/Alert';
+import FormControl from '@mui/material/FormControl';
+import FormLabel from '@mui/material/FormLabel';
+import RadioGroup from '@mui/material/RadioGroup';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import Radio from '@mui/material/Radio';
 
 export default function Home() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [role, setRole] = useState<'organization' | 'volunteer'>('volunteer');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -35,14 +39,20 @@ export default function Home() {
 
       // Email confirmation / OAuth (PKCE): Supabase redirects here with ?code=...
       if (code) {
-        const { error: exchangeError } =
+        const { data, error: exchangeError } =
           await supabase.auth.exchangeCodeForSession(window.location.href);
         if (exchangeError) {
           setError(exchangeError.message);
           return;
         }
         window.history.replaceState(null, '', '/');
-        router.replace('/dashboard');
+        
+        const userRole = data.session?.user?.user_metadata?.role;
+        if (userRole === 'volunteer') {
+          router.replace('/volunteer');
+        } else {
+          router.replace('/dashboard');
+        }
         return;
       }
 
@@ -50,7 +60,12 @@ export default function Home() {
         data: { session },
       } = await supabase.auth.getSession();
       if (session) {
-        router.push('/dashboard');
+        const userRole = session.user?.user_metadata?.role;
+        if (userRole === 'volunteer') {
+          router.push('/volunteer');
+        } else {
+          router.push('/dashboard');
+        }
       }
     };
     void run();
@@ -61,7 +76,7 @@ export default function Home() {
     setLoading(true);
     setError(null);
     
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
@@ -69,7 +84,12 @@ export default function Home() {
     if (error) {
       setError(error.message);
     } else {
-      router.push('/dashboard');
+      const userRole = data.user?.user_metadata?.role;
+      if (userRole === 'volunteer') {
+        router.push('/volunteer');
+      } else {
+        router.push('/dashboard');
+      }
     }
     setLoading(false);
   };
@@ -81,6 +101,11 @@ export default function Home() {
     const { error } = await supabase.auth.signUp({
       email,
       password,
+      options: {
+        data: {
+          role: role,
+        }
+      }
     });
 
     if (error) {
@@ -96,10 +121,10 @@ export default function Home() {
       <Box sx={{ mt: 8, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         <Paper elevation={3} sx={{ p: 4, width: '100%', borderRadius: 3 }}>
           <Typography component="h1" variant="h4" align="center" color="primary" gutterBottom>
-            Nonprofit Portal
+            BUILD UMass Discovery Platform
           </Typography>
           <Typography variant="body1" align="center" color="text.secondary" sx={{ mb: 4 }}>
-            Sign in to manage your posts and opportunities.
+            Sign in to discover opportunities or manage your posts.
           </Typography>
           
           <form onSubmit={handleLogin}>
@@ -127,6 +152,22 @@ export default function Home() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
+
+            <FormControl component="fieldset" sx={{ mt: 2, mb: 1, width: '100%' }}>
+              <FormLabel component="legend">I am a...</FormLabel>
+              <RadioGroup
+                row
+                name="role"
+                value={role}
+                onChange={(e) => setRole(e.target.value as 'organization' | 'volunteer')}
+              >
+                <FormControlLabel value="volunteer" control={<Radio />} label="Volunteer" />
+                <FormControlLabel value="organization" control={<Radio />} label="Organization" />
+              </RadioGroup>
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+                (Role selection is only used when signing up for a new account)
+              </Typography>
+            </FormControl>
             
             {error && (
               <Alert severity={error.includes('successful') ? 'success' : 'error'} sx={{ mt: 2 }}>
