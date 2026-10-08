@@ -1,32 +1,36 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import "./globals.css";
-import { AppRouterCacheProvider } from '@mui/material-nextjs/v15-appRouter';
-import { ThemeProvider } from '@mui/material/styles';
-import { theme } from '../theme';
-import CssBaseline from '@mui/material/CssBaseline';
+import { Open_Sans, Work_Sans } from 'next/font/google';
+import '@/styles/globals.css';
 
-const inter = Inter({ subsets: ["latin"] });
+const openSans = Open_Sans({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-open-sans',
+});
 
-export const metadata: Metadata = {
-  title: "Nonprofit Dashboard",
-  description: "Manage your Catchafire-style posts easily.",
+const workSans = Work_Sans({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-work-sans',
+});
+
+export const metadata = {
+  title: 'HSF Project | Join. Connect. Grow.',
+  description:
+    'Human Service Forum - Professional community for human services.',
 };
+
+import Navbar from "@/components/layout/Navbar";
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
-    <html lang="en">
-      <body className={inter.className}>
-        <AppRouterCacheProvider>
-          <ThemeProvider theme={theme}>
-            <CssBaseline />
-            {children}
-          </ThemeProvider>
-        </AppRouterCacheProvider>
+    <html lang="en" className={`${openSans.variable} ${workSans.variable}`}>
+      <body className="bg-hsf-light text-hsf-text antialiased">
+        <Navbar />
+        {children}
       </body>
     </html>
   );
