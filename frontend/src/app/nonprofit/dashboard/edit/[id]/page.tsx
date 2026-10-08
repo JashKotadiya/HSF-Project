@@ -4,18 +4,22 @@ import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import supabase from "@/lib/supabase";
-import { waitForClientSession } from "@/lib/auth-session";
-import { normalizeRoleFromUser } from "@/lib/roles";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { getMilestones, getSkills } from "@/lib/projects";
+import PageHeader from "@/components/layout/PageHeader";
 
 export default function EditPost() {
   const router = useRouter();
   const params = useParams();
   const postId = params.id as string;
   const isNew = postId === "new";
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
 
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState(false);
 
   // Form State
   const [title, setTitle] = useState("");
@@ -44,37 +48,19 @@ export default function EditPost() {
   ]);
 
   useEffect(() => {
-    const fetchAuthAndPost = async () => {
-      const session = await waitForClientSession();
+    if (isNew || !userId) return;
 
-      if (!session) {
-        router.push("/");
-        return;
-      }
-
-      // Route Protection
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", session.user.id)
-        .maybeSingle();
-      const role = normalizeRoleFromUser(profile, session.user);
-      if (role === "volunteer") {
-        router.push("/volunteer/dashboard");
-        return;
-      }
-
-      setUserId(session.user.id);
-
-      if (isNew) return;
-
-      const { data, error } = await supabase
+    const fetchPost = async () => {
+      const { data } = await supabase
         .from("posts")
         .select("*")
         .eq("id", postId)
-        .single();
+        .eq("user_id", userId)
+        .maybeSingle();
 
-      if (data) {
+      if (!data) {
+        setNotFound(true);
+      } else {
         setTitle(data.title || "");
         setContent(data.content || "");
         setStatus(data.status || "Draft");
@@ -82,7 +68,8 @@ export default function EditPost() {
         setOrgName(data.organization_name || "");
         setLocation(data.location || "");
         setCause(data.cause || "");
-        setSkills(data.skills_needed || [""]);
+        const savedSkills = getSkills(data);
+        setSkills(savedSkills.length > 0 ? savedSkills : [""]);
         setWhatWeNeed(data.what_we_need || "");
         setAdditionalDetails(data.additional_details || "");
         setWhatWeHave(data.what_we_have_in_place || "");
@@ -92,19 +79,22 @@ export default function EditPost() {
         setOrgMission(data.org_mission || "");
         setOrgFunFact(data.org_fun_fact || "");
 
-        if (data.milestones && Array.isArray(data.milestones) && data.milestones.length > 0) {
-          setMilestones(data.milestones);
+        const savedMilestones = getMilestones(data);
+        if (savedMilestones.length > 0) {
+          setMilestones(savedMilestones.map((m) => ({ title: m.title, details: m.details ?? "" })));
         }
       }
       setLoading(false);
     };
 
-    fetchAuthAndPost();
-  }, [postId, isNew, router]);
+    void fetchPost();
+  }, [postId, isNew, userId]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!userId) return;
     setSaving(true);
+    setSaveError(null);
 
     const cleanSkills = skills.filter((s) => s.trim() !== "");
     const cleanMilestones = milestones.filter((m) => m.title.trim() !== "");
@@ -129,47 +119,52 @@ export default function EditPost() {
       org_fun_fact: orgFunFact,
     };
 
-    if (isNew) {
-      const { error } = await supabase.from("posts").insert({
-        user_id: userId,
-        ...payload,
-      });
-      if (!error) router.push("/nonprofit/dashboard");
-      else console.error("Error creating:", error);
-    } else {
-      const { error } = await supabase
-        .from("posts")
-        .update(payload)
-        .eq("id", postId);
-      if (!error) router.push(`/nonprofit/dashboard`);
-      else console.error("Error updating:", error);
+    const { error } = isNew
+      ? await supabase.from("posts").insert({ user_id: userId, ...payload })
+      : await supabase.from("posts").update(payload).eq("id", postId);
+
+    if (error) {
+      setSaveError(`Couldn't save the project: ${error.message}`);
+      setSaving(false);
+      return;
     }
-    setSaving(false);
+    router.push("/nonprofit/dashboard");
   };
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#F8FAFC]">
+      <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-[#F8FAFC]">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#114160] border-t-transparent"></div>
       </div>
     );
   }
 
+  if (notFound) {
+    return (
+      <main className="min-h-screen bg-[#F8FAFC]">
+        <PageHeader
+          title="Project not found"
+          subtitle="This project doesn't exist or belongs to another organization."
+          backHref="/nonprofit/dashboard"
+          backLabel="Back to my projects"
+        />
+      </main>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#F8FAFC]">
-      <main className="mx-auto max-w-4xl px-6 py-10">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-[#092130]">
-            {isNew ? "Create New Project" : "Edit Project Details"}
-          </h1>
-          <p className="mt-2 text-sm text-[#475569]">
-            Fill out the details below to publish your volunteer opportunity.
-          </p>
-        </div>
-
+      <PageHeader
+        eyebrow="My Projects"
+        title={isNew ? "Create New Project" : "Edit Project Details"}
+        subtitle="Fill out the details below to publish your volunteer opportunity."
+        backHref="/nonprofit/dashboard"
+        backLabel="Back to my projects"
+      />
+      <main className="mx-auto max-w-4xl px-6 py-12">
         <form
           onSubmit={handleSave}
-          className="space-y-8 rounded-xl border border-[#E2E8F0] bg-white p-8 shadow-sm"
+          className="space-y-8 rounded-xl border border-[#E2E8F0] bg-white p-8"
         >
           {/* Basic Information */}
           <section>
@@ -208,7 +203,7 @@ export default function EditPost() {
                 </label>
                 <select
                   value={status}
-                  onChange={(e) => setStatus(e.target.value as any)}
+                  onChange={(e) => setStatus(e.target.value as typeof status)}
                   className="w-full rounded-md border border-[#CBD5E1] bg-white px-3 py-2 text-sm text-[#0F172A] outline-none transition focus:border-[#114160] focus:ring-1 focus:ring-[#114160]"
                 >
                   <option value="Draft">Draft</option>
@@ -355,6 +350,12 @@ export default function EditPost() {
               </button>
             </div>
           </section>
+
+          {saveError && (
+            <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+              {saveError}
+            </div>
+          )}
 
           {/* Submit */}
           <div className="flex items-center justify-end gap-4 border-t border-[#E2E8F0] pt-6">
