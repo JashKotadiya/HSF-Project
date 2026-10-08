@@ -28,9 +28,5 @@ export function normalizeRoleFromUser(
 }
 
 export function dashboardPathForRole(role: AppRole): string {
-  return role === "nonprofit" ? "/nonprofit/dashboard" : "/volunteer/dashboard";
-}
-
-export function isVolunteerRole(role: AppRole): boolean {
-  return role === "volunteer";
+  return role === "nonprofit" ? "/nonprofit/dashboard" : "/projects";
 }

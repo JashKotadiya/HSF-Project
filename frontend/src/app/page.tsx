@@ -3,18 +3,15 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import supabase from "@/lib/supabase";
-import { waitForClientSession } from "@/lib/auth-session";
-import {
-  dashboardPathForRole,
-  normalizeRole,
-  normalizeRoleFromUser,
-} from "@/lib/roles";
+import { dashboardPathForRole } from "@/lib/roles";
+import { useAuth } from "@/components/auth/AuthProvider";
 
 type Tab = "volunteer" | "organization";
 type Mode = "login" | "signup";
 
 export default function AuthPortal() {
   const router = useRouter();
+  const { loading: authLoading, user, role } = useAuth();
 
   const [activeTab, setActiveTab] = useState<Tab>("volunteer");
   const [authMode, setAuthMode] = useState<Mode>("login");
@@ -22,68 +19,35 @@ export default function AuthPortal() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Supabase redirects back here with ?error=... when an email/OAuth link fails.
+  const [error, setError] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    const params = new URLSearchParams(window.location.search);
+    return params.get("error_description") ?? params.get("error");
+  });
   const [message, setMessage] = useState<string | null>(null);
 
+  // Signed-in users (including right after login/signup) go straight to their area.
   useEffect(() => {
-    const handleAuthRedirect = async () => {
-      if (typeof window === "undefined") return;
+    if (user && role) router.replace(dashboardPathForRole(role));
+  }, [user, role, router]);
 
-      const params = new URLSearchParams(window.location.search);
-      const code = params.get("code");
-      const oauthError =
-        params.get("error_description") ?? params.get("error");
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
 
-      if (oauthError) {
-        setError(oauthError);
+    if (params.has("error") || params.has("error_description")) {
+      window.history.replaceState(null, "", "/");
+      return;
+    }
+
+    if (code) {
+      void supabase.auth.exchangeCodeForSession(window.location.href).then(({ error: exchangeError }) => {
+        if (exchangeError) setError(exchangeError.message);
         window.history.replaceState(null, "", "/");
-        return;
-      }
-
-      if (code) {
-        const { data, error: exchangeError } =
-          await supabase.auth.exchangeCodeForSession(window.location.href);
-        if (exchangeError) {
-          setError(exchangeError.message);
-          return;
-        }
-        window.history.replaceState(null, "", "/");
-
-        const user = data.session?.user;
-        if (user) {
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("role")
-            .eq("id", user.id)
-            .maybeSingle();
-          const role = normalizeRoleFromUser(profile, user);
-          if (!profile) {
-            await supabase
-              .from("profiles")
-              .upsert([{ id: user.id, role }]);
-          }
-          await waitForClientSession();
-          router.replace(dashboardPathForRole(role));
-        }
-        return;
-      }
-
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (session?.user) {
-        const { data } = await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", session.user.id)
-          .maybeSingle();
-        const role = normalizeRoleFromUser(data, session.user);
-        router.replace(dashboardPathForRole(role));
-      }
-    };
-
-    void handleAuthRedirect();
-  }, [router]);
+      });
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,81 +62,44 @@ export default function AuthPortal() {
         const { data, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
-          options: {
-            data: {
-              role: actualRole,
-            },
-          },
+          options: { data: { role: actualRole } },
         });
-
         if (signUpError) throw signUpError;
 
-        if (data.user) {
-          // Only write profiles when we have a JWT. If email confirmation is on,
-          // signUp often returns user but no session — RLS blocks anon inserts and
-          // triggers this error. Profile is created on first sign-in, or via DB trigger.
-          if (data.session) {
-            const { error: profileError } = await supabase.from("profiles").upsert([
-              { id: data.user.id, role: actualRole },
-            ]);
-            if (profileError) throw profileError;
-
-            await waitForClientSession();
-            router.refresh();
-            router.push(`/${actualRole}/dashboard`);
-          } else {
-            setMessage(
-              "Check your email to confirm your account. After you confirm, sign in once — your profile will be created automatically if it does not exist yet."
-            );
-          }
+        // With email confirmation on, there's no session yet; the profile is
+        // created on first sign-in (or by the DB trigger).
+        if (!data.session) {
+          setMessage(
+            "Check your email to confirm your account. After you confirm, sign in once — your profile will be created automatically if it does not exist yet."
+          );
+          setLoading(false);
         }
       } else {
-        // Log In
         const { data, error: signInError } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
-
         if (signInError) throw signInError;
-
         if (!data.session) {
           throw new Error(
             "No active session after sign-in. If email confirmation is required in Supabase, confirm your email and try again."
           );
         }
-
-        if (data.user) {
-          const { data: profileData, error: profileReadError } = await supabase
-            .from("profiles")
-            .select("role")
-            .eq("id", data.user.id)
-            .maybeSingle();
-
-          if (profileReadError) throw profileReadError;
-
-          const dbRole = normalizeRole(
-            profileData?.role,
-            (data.user.user_metadata?.role as string | undefined) ?? actualRole
-          );
-          if (!profileData) {
-            const { error: upsertError } = await supabase
-              .from("profiles")
-              .upsert([{ id: data.user.id, role: dbRole }]);
-            if (upsertError) throw upsertError;
-          }
-
-          await waitForClientSession();
-
-          router.refresh();
-          router.replace(dashboardPathForRole(dbRole));
-        }
       }
-    } catch (err: any) {
-      setError(err?.message || "Something went wrong.");
-    } finally {
+      // On success the auth provider picks up the session and the effect above redirects.
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
       setLoading(false);
     }
   };
+
+  if (authLoading || user) {
+    return (
+      <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-[#F8FAFC]">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#114160] border-t-transparent" />
+      </div>
+    );
+  }
 
   return (
     <main className="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-[#F8FAFC] px-4 py-12">
@@ -278,7 +205,7 @@ export default function AuthPortal() {
           <div className="mt-8 text-center text-sm text-slate-500">
             {authMode === "login" ? (
               <>
-                Don't have an account?{" "}
+                Don&apos;t have an account?{" "}
                 <button
                   type="button"
                   onClick={() => { setAuthMode("signup"); setError(null); }}

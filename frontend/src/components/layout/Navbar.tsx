@@ -1,171 +1,96 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { User } from "@supabase/supabase-js";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import supabase from "@/lib/supabase";
-import { normalizeRoleFromUser } from "@/lib/roles";
+import { AppRole, dashboardPathForRole } from "@/lib/roles";
+import { useAuth } from "@/components/auth/AuthProvider";
+
+/** Each role only sees its own area: volunteers find and track projects, nonprofits manage theirs. */
+const NAV_LINKS: Record<AppRole, { href: string; label: string }[]> = {
+  volunteer: [
+    { href: "/projects", label: "Browse Projects" },
+    { href: "/volunteer/projects", label: "My Projects" },
+  ],
+  nonprofit: [
+    { href: "/nonprofit/dashboard", label: "My Projects" },
+    { href: "/nonprofit/dashboard/applicants", label: "Applicants" },
+  ],
+};
+
+/** The most specific nav link matching the current path, so parent links don't also light up. */
+function activeHref(pathname: string | null, links: { href: string }[]) {
+  if (!pathname) return null;
+  return (
+    links
+      .filter((l) => pathname === l.href || pathname.startsWith(`${l.href}/`))
+      .sort((a, b) => b.href.length - a.href.length)[0]?.href ?? null
+  );
+}
 
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
-  
-  const [isClient, setIsClient] = useState(false);
-  const [user, setUser] = useState<any>(null);
-  const [userRole, setUserRole] = useState<string | null>(null);
-
-  useEffect(() => {
-    setIsClient(true);
-    
-    const fetchRole = async (userId: string, user: User) => {
-      const { data } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", userId)
-        .maybeSingle();
-      return normalizeRoleFromUser(data, user);
-    };
-
-    const checkUser = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      setUser(session?.user || null);
-      if (session?.user) {
-        const role = await fetchRole(session.user.id, session.user);
-        setUserRole(role);
-      } else {
-        setUserRole(null);
-      }
-    };
-
-    checkUser();
-
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        setUser(session?.user || null);
-        if (session?.user) {
-          const role = await fetchRole(session.user.id, session.user);
-          setUserRole(role);
-        } else {
-          setUserRole(null);
-        }
-      }
-    );
-
-    return () => {
-      authListener.subscription.unsubscribe();
-    };
-  }, []);
+  const { loading, user, role } = useAuth();
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
-    router.push("/");
+    router.replace("/");
   };
 
-  // Don't render complex logic until client hydration to avoid mismatch
-  if (!isClient) return <nav className="h-16 w-full border-b border-[#E2E8F0] bg-white"></nav>;
-
-  const dashboardLink = userRole === "nonprofit" ? "/nonprofit/dashboard" : "/volunteer/dashboard";
+  const links = user && role ? NAV_LINKS[role] : [];
+  const homeHref = user && role ? dashboardPathForRole(role) : "/";
+  const currentHref = activeHref(pathname, links);
 
   return (
-    <nav className="sticky top-0 z-50 w-full border-b border-[#E2E8F0] bg-white/80 px-6 py-4 backdrop-blur-md">
-      <div className="mx-auto flex max-w-7xl items-center justify-between">
-        {/* Logo */}
-        <Link href="/" className="flex items-center gap-2">
+    <nav className="sticky top-0 z-50 h-16 w-full border-b border-[#E2E8F0] bg-white/80 px-6 backdrop-blur-md">
+      <div className="mx-auto flex h-full max-w-7xl items-center justify-between">
+        <Link href={homeHref} className="flex items-center gap-3">
           <span className="text-xl font-extrabold tracking-tight text-[#092130]">
             Human Service Forum
           </span>
+          {role === "nonprofit" && (
+            <span className="hidden rounded-full bg-[#EDE9FF] px-2.5 py-0.5 text-xs font-semibold text-[#4A0E99] sm:inline">
+              Organization
+            </span>
+          )}
         </Link>
 
-        {/* Links */}
-        <div className="hidden items-center gap-8 md:flex">
-          <Link
-            href="/projects"
-            className={`text-sm font-semibold transition hover:text-[#114160] ${
-              pathname?.startsWith("/projects") ? "text-[#114160]" : "text-[#475569]"
-            }`}
-          >
-            Browse Projects
-          </Link>
-
-          {user ? (
-            <div className="flex items-center gap-4">
-              {userRole === "volunteer" && (
+        <div className="flex items-center gap-6">
+          {loading ? (
+            <div className="h-9 w-24 animate-pulse rounded-md bg-[#F1F5F9]" />
+          ) : (
+            <>
+              {links.map((link) => (
                 <Link
-                  href="/volunteer/discover"
+                  key={link.href}
+                  href={link.href}
                   className={`text-sm font-semibold transition hover:text-[#114160] ${
-                    pathname?.startsWith("/volunteer/discover")
-                      ? "text-[#114160]"
-                      : "text-[#475569]"
+                    currentHref === link.href ? "text-[#114160]" : "text-[#475569]"
                   }`}
                 >
-                  Discover
+                  {link.label}
                 </Link>
-              )}
-              <Link
-                href={dashboardLink}
-                className={`text-sm font-semibold transition hover:text-[#114160] ${
-                  pathname?.includes("/dashboard") ? "text-[#114160]" : "text-[#475569]"
-                }`}
-              >
-                Dashboard
-              </Link>
-              <button
-                onClick={handleSignOut}
-                className="rounded-md border border-[#E2E8F0] bg-[#F8FAFC] px-4 py-2 text-sm font-semibold text-[#092130] transition hover:bg-[#E2E8F0]"
-              >
-                Sign Out
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-4">
-              <Link
-                href="/login"
-                className="text-sm font-semibold text-[#475569] transition hover:text-[#114160]"
-              >
-                Log In
-              </Link>
-              <Link
-                href="/signup"
-                className="rounded-md bg-[#114160] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#092130]"
-              >
-                Sign Up
-              </Link>
-            </div>
-          )}
-        </div>
+              ))}
 
-        {/* Mobile menu */}
-        <div className="flex items-center gap-4 md:hidden">
-          {user ? (
-            <>
-              {userRole === "volunteer" && (
-                <Link href="/volunteer/discover" className="text-sm font-semibold text-[#114160]">
-                  Discover
-                </Link>
+              {user ? (
+                <button
+                  onClick={handleSignOut}
+                  className="rounded-md border border-[#E2E8F0] bg-[#F8FAFC] px-4 py-2 text-sm font-semibold text-[#092130] transition hover:bg-[#E2E8F0]"
+                >
+                  Sign Out
+                </button>
+              ) : (
+                pathname !== "/" && (
+                  <Link
+                    href="/"
+                    className="rounded-md bg-[#114160] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#092130]"
+                  >
+                    Log In
+                  </Link>
+                )
               )}
-              <Link
-                href={dashboardLink}
-                className="text-sm font-semibold text-[#114160]"
-              >
-                Dashboard
-              </Link>
-              <button
-                onClick={handleSignOut}
-                className="text-sm font-medium text-[#475569] hover:text-[#092130]"
-              >
-                Sign Out
-              </button>
             </>
-          ) : (
-            <Link
-              href="/"
-              className="text-sm font-semibold text-[#114160]"
-            >
-              Log In
-            </Link>
           )}
         </div>
       </div>

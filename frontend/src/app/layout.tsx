@@ -20,6 +20,7 @@ export const metadata = {
 };
 
 import Navbar from "@/components/layout/Navbar";
+import AuthProvider from "@/components/auth/AuthProvider";
 
 export default function RootLayout({
   children,
@@ -28,9 +29,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${openSans.variable} ${workSans.variable}`}>
-      <body className="bg-hsf-light text-hsf-text antialiased">
-        <Navbar />
-        {children}
+      <body className="bg-[#F8FAFC] text-[#0F172A] antialiased">
+        <AuthProvider>
+          <Navbar />
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );
