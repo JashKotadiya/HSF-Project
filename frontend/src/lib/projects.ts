@@ -20,6 +20,7 @@ export interface Project {
   milestones?: unknown;
   org_mission?: string | null;
   org_fun_fact?: string | null;
+  logo_url?: string | null;
 }
 
 export interface Milestone {

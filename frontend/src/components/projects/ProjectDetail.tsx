@@ -135,9 +135,14 @@ export default function ProjectDetail({
         <aside className="w-full shrink-0 space-y-6 lg:sticky lg:top-24 lg:w-80">
           <div className="space-y-5 rounded-xl border border-[#E2E8F0] bg-white p-6">
             <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#D3E6F2] text-lg font-bold text-[#114160]">
-                {orgName.charAt(0).toUpperCase()}
-              </div>
+              <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-[#D3E6F2] text-lg font-bold text-[#114160]">
+                {project.logo_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={project.logo_url} alt={`${orgName} logo`} className="h-full w-full object-cover" />
+                ) : (
+                  orgName.charAt(0).toUpperCase()
+                )}
+</div>
               <div>
                 <p className="font-semibold text-[#092130]">{orgName}</p>
                 <p className="text-sm text-[#64748B]">{project.location || "Remote"}</p>
