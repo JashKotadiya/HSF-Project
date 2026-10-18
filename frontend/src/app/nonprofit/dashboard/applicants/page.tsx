@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import supabase from "@/lib/supabase";
@@ -39,6 +39,8 @@ function ApplicantsDashboard() {
   const [statusFilter, setStatusFilter] = useState<ApplicationStatus | "all">("pending");
   const [searchTerm, setSearchTerm] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
+
+  const viewedIds = useRef(new Set<string>());
 
   useEffect(() => {
     if (!userId) return;
@@ -83,6 +85,19 @@ function ApplicantsDashboard() {
         (projectTitles.get(a.project_id) ?? "").toLowerCase().includes(term))
   );
   const selected = applications.find((a) => a.id === selectedId) ?? null;
+
+  // Records the first time an organization opens a pending application.
+  // The send-status-email function emails the volunteer when viewed_at is first set.
+  const markViewed = async (app: Application) => {
+    if (app.status !== "pending" || viewedIds.current.has(app.id)) return;
+    viewedIds.current.add(app.id);
+    const { error: viewError } = await supabase
+      .from("applications")
+      .update({ viewed_at: new Date().toISOString() })
+      .eq("id", app.id)
+      .is("viewed_at", null);
+    if (viewError) console.error("Couldn't record view:", viewError.message);
+  };
 
   const updateStatus = async (app: Application, status: ApplicationStatus) => {
     setActionError(null);
@@ -188,7 +203,10 @@ function ApplicantsDashboard() {
                   <li key={app.id}>
                     <button
                       type="button"
-                      onClick={() => setSelectedId(app.id)}
+                      onClick={() => {
+                        setSelectedId(app.id);
+                        void markViewed(app);
+                      }}
                       className={`w-full rounded-md border-l-4 px-3 py-3 text-left transition ${
                         selectedId === app.id
                           ? "border-[#4A0E99] bg-[#F8FAFC]"
