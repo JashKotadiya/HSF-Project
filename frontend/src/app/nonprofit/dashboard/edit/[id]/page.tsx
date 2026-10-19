@@ -7,6 +7,7 @@ import supabase from "@/lib/supabase";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { getMilestones, getSkills } from "@/lib/projects";
 import PageHeader from "@/components/layout/PageHeader";
+import ImageUploader from "@/components/media/ImageUploader";
 
 export default function EditPost() {
   const router = useRouter();
@@ -28,6 +29,7 @@ export default function EditPost() {
   const [posterName, setPosterName] = useState("");
 
   const [orgName, setOrgName] = useState("");
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [location, setLocation] = useState("");
   const [cause, setCause] = useState("");
   const [skills, setSkills] = useState<string[]>([""]);
@@ -66,6 +68,7 @@ export default function EditPost() {
         setStatus(data.status || "Draft");
         setPosterName(data.poster_name || "");
         setOrgName(data.organization_name || "");
+        setLogoUrl(data.logo_url || null);
         setLocation(data.location || "");
         setCause(data.cause || "");
         const savedSkills = getSkills(data);
@@ -105,6 +108,7 @@ export default function EditPost() {
       status,
       poster_name: posterName,
       organization_name: orgName,
+      logo_url: logoUrl,
       location,
       cause,
       skills_needed: cleanSkills,
@@ -232,6 +236,16 @@ export default function EditPost() {
               Organization Details
             </h2>
             <div className="grid gap-6 sm:grid-cols-2">
+              {userId && (
+                <ImageUploader
+                  bucket="logos"
+                  userId={userId}
+                  objectName="logo"
+                  currentUrl={logoUrl}
+                  onUploaded={setLogoUrl}
+                  label="Organization logo"
+                />
+              )}
               <div className="sm:col-span-2">
                 <label className="mb-1 block text-sm font-semibold text-[#092130]">
                   Organization Name

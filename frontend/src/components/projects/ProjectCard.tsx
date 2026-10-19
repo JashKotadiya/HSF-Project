@@ -15,9 +15,15 @@ export default function ProjectCard({ project }: { project: Project }) {
     <div className="flex flex-col overflow-hidden rounded-xl border border-[#E2E8F0] bg-white transition hover:shadow-md">
       <div className="flex-1 p-6">
         <div className="mb-2 flex items-center justify-between gap-3">
-          <span className="text-xs font-semibold uppercase tracking-wider text-[#64748B] line-clamp-1">
-            {organizationName}
-          </span>
+          <div className="flex min-w-0 items-center gap-2">
+            {project.logo_url && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={project.logo_url} alt="" className="h-6 w-6 shrink-0 rounded object-cover" />
+            )}
+            <span className="text-xs font-semibold uppercase tracking-wider text-[#64748B] line-clamp-1">
+              {organizationName}
+            </span>
+          </div>
           <span className="shrink-0 text-xs font-medium text-[#64748B]">{timeAgo}</span>
         </div>
 
