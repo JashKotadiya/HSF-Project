@@ -78,17 +78,17 @@ def get_active_jobs():
 @app.get("/api/jobs/{job_id}")
 def get_job_by_id(job_id: str):
     try:
+        # A list response lets zero matches reach the not-found check below.
         response = (
             supabase_public.table("posts")
             .select("*")
             .eq("id", job_id)
             .eq("status", "Active")
-            .single()
             .execute()
         )
         if not response.data:
             raise HTTPException(status_code=404, detail="Job not found or not active")
-        return response.data
+        return response.data[0]
     except HTTPException:
         raise
     except Exception as e:
@@ -123,5 +123,7 @@ def update_post_status(
         if not response.data:
             raise HTTPException(status_code=404, detail="Post not found or you don't have permission")
         return response.data[0]
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
