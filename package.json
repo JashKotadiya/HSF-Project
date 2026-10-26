@@ -1,0 +1,7 @@
+{
+  "name": "hsf-project",
+  "private": true,
+  "scripts": {
+    "test": "node supabase/tests/test-application-rls.mjs"
+  }
+}
