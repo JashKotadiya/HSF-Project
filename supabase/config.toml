@@ -416,7 +416,7 @@ enabled = true
 
 [functions.send-status-email]
 enabled = true
-verify_jwt = false
+verify_jwt = true
 import_map = "./functions/send-status-email/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
