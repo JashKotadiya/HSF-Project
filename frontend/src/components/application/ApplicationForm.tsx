@@ -140,6 +140,18 @@ export default function ApplicationForm({
     setIsSubmitting(true);
 
     try {
+      const { data: openProject, error: projectError } = await supabase
+        .from("posts")
+        .select("id")
+        .eq("id", projectId)
+        .eq("status", "Active")
+        .maybeSingle();
+      if (projectError) throw projectError;
+      if (!openProject) {
+        setErrors(["This project is no longer accepting applications."]);
+        return;
+      }
+
       const resumePath = await uploadResume(userId, projectId, resume);
 
       const { error: insertError } = await supabase.from("applications").insert({
@@ -164,8 +176,15 @@ export default function ApplicationForm({
       setSubmitted(true);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String((err as { message?: string })?.message ?? err);
-      const looksLikeSetup = /bucket|row-level security|column|schema cache|policy/i.test(message);
-      setErrors([looksLikeSetup ? `${message}. ${SETUP_HINT}` : message || "Something went wrong while submitting your application."]);
+      const closedProject = /row-level security|policy/i.test(message);
+      const looksLikeSetup = /bucket|column|schema cache/i.test(message);
+      setErrors([
+        closedProject
+          ? "This project is no longer accepting applications."
+          : looksLikeSetup
+            ? `${message}. ${SETUP_HINT}`
+            : message || "Something went wrong while submitting your application.",
+      ]);
     } finally {
       setIsSubmitting(false);
     }
