@@ -8,7 +8,21 @@ alter table public.applications add column if not exists applicant_name text;
 alter table public.applications add column if not exists applicant_email text;
 
 -- status: plain text with three values (converts an enum column if one exists)
-alter table public.applications alter column status type text using status::text;
+-- Skip an already-text column: on later runs the insert policy depends on it.
+do $$
+begin
+  if exists (
+    select 1 from pg_attribute
+    where attrelid = 'public.applications'::regclass
+      and attname = 'status'
+      and not attisdropped
+      and atttypid <> 'text'::regtype
+  ) then
+    -- An enum-typed default must be removed before converting the column.
+    alter table public.applications alter column status drop default;
+    alter table public.applications alter column status type text using status::text;
+  end if;
+end $$;
 
 do $$
 declare c record;
