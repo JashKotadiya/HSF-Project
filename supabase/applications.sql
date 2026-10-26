@@ -64,7 +64,15 @@ drop policy if exists "applications_insert_own" on public.applications;
 create policy "applications_insert_own"
   on public.applications for insert
   to authenticated
-  with check (volunteer_id::text = auth.uid()::text);
+  with check (
+    volunteer_id::text = auth.uid()::text
+    and status = 'pending'
+    and exists (
+      select 1 from public.posts p
+      where p.id::text = applications.project_id::text
+        and p.status = 'Active'
+    )
+  );
 
 drop policy if exists "applications_select_own" on public.applications;
 create policy "applications_select_own"
@@ -96,6 +104,44 @@ create policy "applications_update_project_owner"
     where p.id::text = applications.project_id::text
       and p.user_id::text = auth.uid()::text
   ));
+
+-- Owners may change the decision and the first-viewed time, not the
+-- applicant, the answers, or the resume path.
+alter table public.applications add column if not exists viewed_at timestamptz;
+
+revoke update on table public.applications from anon, authenticated;
+grant update (status, viewed_at) on table public.applications to authenticated;
+
+create or replace function public.protect_application_review_columns()
+returns trigger
+language plpgsql
+as $$
+begin
+  if coalesce(auth.role(), '') = 'service_role' then
+    return new;
+  end if;
+
+  if new.id is distinct from old.id
+    or new.project_id is distinct from old.project_id
+    or new.volunteer_id is distinct from old.volunteer_id
+    or new.resume_path is distinct from old.resume_path
+    or new.answers is distinct from old.answers
+    or new.applicant_name is distinct from old.applicant_name
+    or new.applicant_email is distinct from old.applicant_email
+    or new.created_at is distinct from old.created_at
+  then
+    raise exception 'Only status and viewed_at can be changed on an application'
+      using errcode = '42501';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists applications_protect_review_columns on public.applications;
+create trigger applications_protect_review_columns
+  before update on public.applications
+  for each row execute function public.protect_application_review_columns();
 
 -- 3) Private bucket for resumes: files live under "<volunteer uid>/..."
 insert into storage.buckets (id, name, public)
@@ -132,5 +178,6 @@ create policy "resumes_select_project_owner"
       join public.posts p on p.id::text = a.project_id::text
       where a.resume_path = storage.objects.name
         and p.user_id::text = auth.uid()::text
+        and (storage.foldername(storage.objects.name))[1] = a.volunteer_id::text
     )
   );
