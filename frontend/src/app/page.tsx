@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import supabase from "@/lib/supabase";
 import { dashboardPathForRole } from "@/lib/roles";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { signInWithRole } from "@/lib/signInWithRole";
 
 type Tab = "volunteer" | "organization";
 type Mode = "login" | "signup";
@@ -51,6 +52,7 @@ export default function AuthPortal() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
     setError(null);
     setMessage(null);
     setLoading(true);
@@ -75,16 +77,7 @@ export default function AuthPortal() {
           setLoading(false);
         }
       } else {
-        const { data, error: signInError } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        if (signInError) throw signInError;
-        if (!data.session) {
-          throw new Error(
-            "No active session after sign-in. If email confirmation is required in Supabase, confirm your email and try again."
-          );
-        }
+        await signInWithRole(email, password, actualRole);
       }
       // On success the auth provider picks up the session and the effect above redirects.
     } catch (err: unknown) {
@@ -117,6 +110,7 @@ export default function AuthPortal() {
           {/* Main Tabs (Volunteer vs Org) */}
           <div className="mb-8 flex rounded-lg bg-slate-100 p-1">
             <button
+              disabled={loading}
               onClick={() => { setActiveTab("volunteer"); setError(null); setMessage(null); }}
               className={`flex-1 rounded-md py-2.5 text-sm font-semibold transition ${
                 activeTab === "volunteer"
@@ -127,6 +121,7 @@ export default function AuthPortal() {
               I am a Volunteer
             </button>
             <button
+              disabled={loading}
               onClick={() => { setActiveTab("organization"); setError(null); setMessage(null); }}
               className={`flex-1 rounded-md py-2.5 text-sm font-semibold transition ${
                 activeTab === "organization"
@@ -167,6 +162,7 @@ export default function AuthPortal() {
               </label>
               <input
                 type="email"
+                disabled={loading}
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -181,6 +177,7 @@ export default function AuthPortal() {
               </label>
               <input
                 type="password"
+                disabled={loading}
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -208,6 +205,7 @@ export default function AuthPortal() {
                 Don&apos;t have an account?{" "}
                 <button
                   type="button"
+                  disabled={loading}
                   onClick={() => { setAuthMode("signup"); setError(null); }}
                   className="font-semibold text-[#114160] hover:underline"
                 >
@@ -219,6 +217,7 @@ export default function AuthPortal() {
                 Already have an account?{" "}
                 <button
                   type="button"
+                  disabled={loading}
                   onClick={() => { setAuthMode("login"); setError(null); }}
                   className="font-semibold text-[#114160] hover:underline"
                 >

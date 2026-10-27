@@ -37,4 +37,18 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
+let loginClientCount = 0;
+
+/** Check credentials and role without publishing a browser session yet. */
+export function createLoginClient() {
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      storageKey: `hsf-login-check-${++loginClientCount}`,
+    },
+  });
+}
+
 export default supabase;
