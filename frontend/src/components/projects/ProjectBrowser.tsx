@@ -1,8 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ProjectCard from "@/components/projects/ProjectCard";
 import ProjectFilters, { Filters } from "@/components/projects/ProjectFilters";
+import { useAuth } from "@/components/auth/AuthProvider";
+import supabase from "@/lib/supabase";
+import type { ApplicationStatus } from "@/lib/applications";
 import { getSkills, Project } from "@/lib/projects";
 
 type Sort = "newest" | "oldest";
@@ -14,8 +17,57 @@ function uniqueSorted(values: (string | null | undefined)[]) {
 }
 
 export default function ProjectBrowser({ projects }: { projects: Project[] }) {
+  const { user, role, loading: authLoading } = useAuth();
+  const userId = user?.id;
   const [filters, setFilters] = useState<Filters>({ search: "", causes: [], skills: [] });
   const [sort, setSort] = useState<Sort>("newest");
+  const [applicationState, setApplicationState] = useState<{
+    userId: string;
+    statuses: Record<string, ApplicationStatus>;
+    error: boolean;
+  } | null>(null);
+  const [retry, setRetry] = useState(0);
+
+  useEffect(() => {
+    if (authLoading || !userId || role !== "volunteer") return;
+    let cancelled = false;
+    let latestRequest = 0;
+    const load = async () => {
+      const request = ++latestRequest;
+      try {
+        const { data, error } = await supabase
+          .from("applications")
+          .select("project_id, status")
+          .eq("volunteer_id", userId);
+        if (error) throw error;
+        const statuses: Record<string, ApplicationStatus> = {};
+        for (const application of data ?? []) {
+          if (["pending", "approved", "rejected"].includes(application.status)) {
+            statuses[application.project_id] = application.status as ApplicationStatus;
+          }
+        }
+        if (!cancelled && request === latestRequest) {
+          setApplicationState({ userId, statuses, error: false });
+        }
+      } catch {
+        if (!cancelled && request === latestRequest) {
+          setApplicationState({ userId, statuses: {}, error: true });
+        }
+      }
+    };
+    void load();
+    // Refresh decisions when returning from another browser tab or window.
+    const refresh = () => { void load(); };
+    window.addEventListener("focus", refresh);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", refresh);
+    };
+  }, [userId, role, authLoading, retry]);
+
+  const ownApplications = !authLoading && role === "volunteer" && applicationState?.userId === userId
+    ? applicationState : null;
+  const checkingApplications = authLoading || (!!userId && role === "volunteer" && !ownApplications);
 
   const causeOptions = useMemo(() => uniqueSorted(projects.map((p) => p.cause)), [projects]);
   const skillOptions = useMemo(() => uniqueSorted(projects.flatMap((p) => getSkills(p))), [projects]);
@@ -49,6 +101,14 @@ export default function ProjectBrowser({ projects }: { projects: Project[] }) {
       </aside>
 
       <div className="flex-1">
+        {ownApplications?.error && (
+          <div role="alert" className="mb-6 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            Couldn&apos;t load your application statuses. You can still view project details.
+            <button type="button" onClick={() => setRetry((value) => value + 1)} className="ml-2 font-semibold underline">
+              Retry
+            </button>
+          </div>
+        )}
         <div className="mb-6 flex items-center justify-between">
           <h2 className="text-xl font-bold text-[#092130]">
             {visible.length} {visible.length === 1 ? "Project" : "Projects"} Found
@@ -80,7 +140,13 @@ export default function ProjectBrowser({ projects }: { projects: Project[] }) {
         ) : (
           <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
             {visible.map((project) => (
-              <ProjectCard key={project.id} project={project} />
+              <ProjectCard
+                key={project.id}
+                project={project}
+                applicationStatus={ownApplications?.statuses[project.id]}
+                checkingApplication={checkingApplications}
+                applicationError={ownApplications?.error}
+              />
             ))}
           </div>
         )}
