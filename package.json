@@ -1,0 +1,11 @@
+{
+  "name": "hsf-project",
+  "private": true,
+  "scripts": {
+    "test": "node supabase/tests/test-application-rls.mjs",
+    "test:local": "node --test tests/application-form.test.cjs tests/applications-setup.test.cjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.11"
+  }
+}
