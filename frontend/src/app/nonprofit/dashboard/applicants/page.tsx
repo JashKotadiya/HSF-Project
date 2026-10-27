@@ -39,6 +39,9 @@ function ApplicantsDashboard() {
   const [statusFilter, setStatusFilter] = useState<ApplicationStatus | "all">("pending");
   const [searchTerm, setSearchTerm] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const updatingRef = useRef<string | null>(null);
 
   const viewedIds = useRef(new Set<string>());
 
@@ -100,16 +103,34 @@ function ApplicantsDashboard() {
   };
 
   const updateStatus = async (app: Application, status: ApplicationStatus) => {
+    if (updatingRef.current || app.status === status) return;
+    const applicantName = app.applicant_name || app.applicant_email || "this volunteer";
+    const projectTitle = projectTitles.get(app.project_id) ?? "this project";
+    if (status === "approved" && !window.confirm(`Approve ${applicantName} for "${projectTitle}"?`)) return;
+
+    updatingRef.current = app.id;
+    setUpdatingId(app.id);
     setActionError(null);
-    const previous = app.status;
-    setApplications((prev) => prev.map((a) => (a.id === app.id ? { ...a, status } : a)));
-    const { error: updateError } = await supabase
-      .from("applications")
-      .update({ status })
-      .eq("id", app.id);
-    if (updateError) {
-      setApplications((prev) => prev.map((a) => (a.id === app.id ? { ...a, status: previous } : a)));
-      setActionError(`${updateError.message}. ${SETUP_HINT}`);
+    setActionMessage(null);
+    try {
+      const { data, error: updateError } = await supabase
+        .from("applications")
+        .update({ status })
+        .eq("id", app.id)
+        .select("id, status")
+        .single();
+      if (updateError) throw updateError;
+      if (!data || data.id !== app.id || !["pending", "approved", "rejected"].includes(data.status)) {
+        throw new Error("Couldn't confirm the saved decision. Please refresh and try again.");
+      }
+      setApplications((prev) => prev.map((a) => (a.id === app.id ? { ...a, status: data.status as ApplicationStatus } : a)));
+      setActionMessage(`Decision saved for ${applicantName}: ${STATUS_LABELS[data.status as ApplicationStatus]}.`);
+    } catch (error) {
+      const message = (error as { message?: string })?.message;
+      setActionError(message || "Couldn't save the decision. Please try again.");
+    } finally {
+      updatingRef.current = null;
+      setUpdatingId(null);
     }
   };
 
@@ -205,6 +226,8 @@ function ApplicantsDashboard() {
                       type="button"
                       onClick={() => {
                         setSelectedId(app.id);
+                        setActionError(null);
+                        setActionMessage(null);
                         void markViewed(app);
                       }}
                       className={`w-full rounded-md border-l-4 px-3 py-3 text-left transition ${
@@ -285,13 +308,19 @@ function ApplicantsDashboard() {
                   </div>
 
                   {actionError && (
-                    <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{actionError}</div>
+                    <div role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{actionError}</div>
+                  )}
+                  {actionMessage && (
+                    <div role="status" className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-700">{actionMessage}</div>
+                  )}
+                  {updatingId === selected.id && (
+                    <p role="status" className="text-sm text-[#475569]">Saving decision...</p>
                   )}
 
                   <div className="flex flex-wrap gap-3 border-t border-[#E2E8F0] pt-6">
                     <button
                       type="button"
-                      disabled={selected.status === "approved"}
+                      disabled={updatingId !== null || selected.status === "approved"}
                       onClick={() => updateStatus(selected, "approved")}
                       className="flex-1 rounded-md bg-[#114160] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#092130] disabled:cursor-not-allowed disabled:opacity-50"
                     >
@@ -299,7 +328,7 @@ function ApplicantsDashboard() {
                     </button>
                     <button
                       type="button"
-                      disabled={selected.status === "rejected"}
+                      disabled={updatingId !== null || selected.status === "rejected"}
                       onClick={() => updateStatus(selected, "rejected")}
                       className="flex-1 rounded-md border border-red-200 bg-red-50 px-5 py-2.5 text-sm font-semibold text-red-600 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
                     >

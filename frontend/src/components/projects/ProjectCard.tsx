@@ -1,8 +1,15 @@
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { getSkills, Project } from "@/lib/projects";
+import StatusBadge from "@/components/applications/StatusBadge";
+import type { ApplicationStatus } from "@/lib/applications";
 
-export default function ProjectCard({ project }: { project: Project }) {
+export default function ProjectCard({ project, applicationStatus, checkingApplication, applicationError }: {
+  project: Project;
+  applicationStatus?: ApplicationStatus;
+  checkingApplication?: boolean;
+  applicationError?: boolean;
+}) {
   const { id, title, content, cause, location, created_at } = project;
   const organizationName = project.organization_name || "Partner Organization";
   const skills = getSkills(project);
@@ -28,6 +35,16 @@ export default function ProjectCard({ project }: { project: Project }) {
         </div>
 
         <h3 className="mb-2 text-xl font-bold text-[#092130] line-clamp-2">{title}</h3>
+
+        {applicationStatus && (
+          <div className="mb-4 flex items-center gap-2">
+            <span className="text-xs font-medium text-[#475569]">Your application</span>
+            <StatusBadge status={applicationStatus} />
+          </div>
+        )}
+        {checkingApplication && (
+          <p role="status" className="mb-4 text-xs text-[#64748B]">Checking your application...</p>
+        )}
 
         <p className="mb-4 text-sm leading-relaxed text-[#475569] line-clamp-3">
           {content || "No description provided yet."}
@@ -58,10 +75,10 @@ export default function ProjectCard({ project }: { project: Project }) {
       <div className="flex items-center justify-between border-t border-[#E2E8F0] bg-[#F8FAFC] px-6 py-4">
         <span className="text-xs font-medium text-[#64748B]">{location || "Remote"}</span>
         <Link
-          href={`/projects/${id}`}
+          href={applicationStatus ? "/volunteer/projects" : `/projects/${id}`}
           className="inline-flex items-center justify-center rounded-md bg-[#114160] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#092130]"
         >
-          View & Apply
+          {applicationStatus ? "View My Application" : checkingApplication || applicationError ? "View Details" : "View & Apply"}
         </Link>
       </div>
     </div>
