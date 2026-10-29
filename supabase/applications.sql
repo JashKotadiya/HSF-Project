@@ -195,3 +195,6 @@ create policy "resumes_select_project_owner"
         and (storage.foldername(storage.objects.name))[1] = a.volunteer_id::text
     )
   );
+
+-- Tracks that the match-disclosure email was sent (issue #17).
+alter table public.applications add column if not exists match_emailed_at timestamptz;
