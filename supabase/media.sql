@@ -32,4 +32,4 @@ create policy "images_delete_own" on storage.objects for delete to authenticated
     and (storage.foldername(name))[1] = auth.uid()::text);
 
 alter table public.profiles add column if not exists avatar_url text;
-alter table public.posts    add column if not exists logo_url   text;git add supabase/media.sql
+alter table public.posts    add column if not exists logo_url   text;
