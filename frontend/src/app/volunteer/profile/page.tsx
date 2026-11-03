@@ -374,40 +374,92 @@ export default function VolunteerProfilePage() {
         }
       }
 
-      const { error: updateError } =
-        await supabase
-          .from("profiles")
-          .update({
-            full_name: nameToSave,
-            bio: bioToSave,
-            technical_skills: skills,
-            resume_path: resumePath,
-          })
-          .eq("id", userId);
+      
+const previousResumePath = profile.resume_path;
 
-      if (updateError) {
-        if (
-          resumePath &&
-          resumePath !==
-            profile.resume_path
-        ) {
-          await supabase.storage
-            .from(RESUME_BUCKET)
-            .remove([resumePath]);
-        }
+const { data: updatedRows, error: updateError } =
+  await supabase
+    .from("profiles")
+    .update({
+      full_name: profile.full_name.trim(),
+      bio: profile.bio.trim(),
+      technical_skills: skills,
+      resume_path: resumePath,
+    })
+    .eq("id", userId)
+    .select("id, resume_path");
 
-        throw updateError;
-      }
+// If Supabase reports an error, do not delete
+// either file. The database state may be uncertain.
+if (updateError) {
+  throw new Error(
+    `Couldn't update your profile: ${updateError.message}`
+  );
+}
 
-      if (
-        profile.resume_path &&
-        resumePath !==
-          profile.resume_path
-      ) {
-        await supabase.storage
-          .from(RESUME_BUCKET)
-          .remove([profile.resume_path]);
-      }
+// A successful HTTP response does not necessarily
+// mean that a database row was updated.
+if (!updatedRows || updatedRows.length === 0) {
+  // The UPDATE affected no rows, so the replacement
+  // upload isn't referenced by this update.
+  if (
+    resumePath &&
+    resumePath !== previousResumePath
+  ) {
+    const { error: cleanupError } =
+      await supabase.storage
+        .from(RESUME_BUCKET)
+        .remove([resumePath]);
+
+    if (cleanupError) {
+      console.error(
+        "Couldn't remove unused replacement resume:",
+        cleanupError
+      );
+    }
+  }
+
+  throw new Error(
+    "Your profile was not updated. " +
+    "Your previous resume has been preserved. " +
+    "Please try again."
+  );
+}
+
+// Verify the exact user and new storage reference.
+if (
+  updatedRows.length !== 1 ||
+  String(updatedRows[0].id) !== String(userId) ||
+  updatedRows[0].resume_path !== resumePath
+) {
+  // Do not delete either file when the saved
+  // database state cannot be confirmed.
+  throw new Error(
+    "The profile update could not be verified. " +
+    "Your previous resume has not been deleted."
+  );
+}
+
+// At this point the database has confirmed the
+// replacement resume reference.
+if (
+  previousResumePath &&
+  resumePath !== previousResumePath
+) {
+  const { error: deleteError } =
+    await supabase.storage
+      .from(RESUME_BUCKET)
+      .remove([previousResumePath]);
+
+  // Failure to remove the old file should not
+  // undo a successfully saved database update.
+  if (deleteError) {
+    console.error(
+      "Profile saved, but old resume cleanup failed:",
+      deleteError
+    );
+  }
+}
 
       // Update the saved snapshot.
       setSavedFields({
