@@ -15,6 +15,8 @@ import {
   STATUS_LABELS,
 } from "@/lib/applications";
 
+import EmailApplicantForm from "@/components/applications/EmailApplicantForm";
+
 type ProjectSummary = { id: string; title: string };
 const STATUS_FILTERS: (ApplicationStatus | "all")[] = ["all", "pending", "approved", "rejected"];
 
@@ -343,6 +345,7 @@ function ApplicantsDashboard() {
                       Download Resume
                     </button>
                   </div>
+                                    <EmailApplicantForm key={selected.id} applicationId={selected.id} />
                 </div>
               )}
             </section>
