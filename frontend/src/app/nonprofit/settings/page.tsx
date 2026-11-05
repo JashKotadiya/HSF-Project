@@ -92,6 +92,7 @@ export default function NonprofitSettingsPage() {
     useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
+  const [retryCount, setRetryCount] = useState(0);
   const [saving, setSaving] = useState(false);
 
   const [error, setError] = useState<string | null>(
@@ -103,14 +104,23 @@ export default function NonprofitSettingsPage() {
   );
 
   // Load the organization settings for the current user.
-  useEffect(() => {
-    if (authLoading || !userId || role !== "nonprofit") {
-      return;
-    }
+  
+useEffect(() => {
+  if (authLoading || !userId || role !== "nonprofit") {
+    return;
+  }
 
-    let cancelled = false;
+  let cancelled = false;
 
-    async function loadSettings() {
+  // A new request must not inherit the previous
+  // request's successful-loading state.
+  setLoading(true);
+  setLoadedUserId(null);
+  setError(null);
+  setMessage(null);
+
+  async function loadSettings() {
+    try {
       const { data, error: loadError } = await supabase
         .from("profiles")
         .select(
@@ -123,36 +133,51 @@ export default function NonprofitSettingsPage() {
       if (cancelled) return;
 
       if (loadError) {
-        setError(
+        throw new Error(
           `Couldn't load organization settings: ${loadError.message}`
         );
-      } else if (!data) {
-        setError("Organization profile not found.");
-      } else {
-        const saved: OrganizationSettings = {
-          organization_name: data.organization_name ?? "",
-          mission_statement: data.mission_statement ?? "",
-          description: data.description ?? "",
-        };
-
-        setSavedSettings(saved);
-
-        const draft = readDraft(userId);
-        setSettings(draft ?? saved);
-
-        setError(null);
       }
 
+      if (!data) {
+        throw new Error(
+          "Organization profile not found. Please retry loading."
+        );
+      }
+
+      const saved: OrganizationSettings = {
+        organization_name: data.organization_name ?? "",
+        mission_statement: data.mission_statement ?? "",
+        description: data.description ?? "",
+      };
+
+      // Only a confirmed successful read establishes
+      // the baseline for editing and saving.
+      setSavedSettings(saved);
+      setSettings(readDraft(userId) ?? saved);
       setLoadedUserId(userId);
-      setLoading(false);
+      setError(null);
+    } catch (loadFailure) {
+      if (cancelled) return;
+
+      setLoadedUserId(null);
+      setError(
+        loadFailure instanceof Error
+          ? loadFailure.message
+          : "Couldn't load organization settings."
+      );
+    } finally {
+      if (!cancelled) {
+        setLoading(false);
+      }
     }
+  }
 
-    void loadSettings();
+  void loadSettings();
 
-    return () => {
-      cancelled = true;
-    };
-  }, [userId, role, authLoading]);
+  return () => {
+    cancelled = true;
+  };
+}, [userId, role, authLoading, retryCount]);
 
   function updateField(
     field: keyof OrganizationSettings,
@@ -290,15 +315,48 @@ export default function NonprofitSettingsPage() {
     );
   }
 
-  if (loading || loadedUserId !== userId) {
-    return (
-      <main className="min-h-screen bg-[#F8FAFC]">
-        <div className="mx-auto max-w-3xl px-6 py-16">
-          <div className="h-80 animate-pulse rounded-xl bg-white" />
+  
+if (loading) {
+  return (
+    <main className="min-h-screen bg-[#F8FAFC]">
+      <div className="mx-auto max-w-3xl px-6 py-16">
+        <div className="h-80 animate-pulse rounded-xl bg-white" />
+      </div>
+    </main>
+  );
+}
+
+if (loadedUserId !== userId) {
+  return (
+    <main className="min-h-screen bg-[#F8FAFC]">
+      <div className="mx-auto max-w-3xl px-6 py-16">
+        <div className="rounded-xl border border-[#E2E8F0] bg-white p-8 shadow-sm">
+          <h1 className="text-xl font-bold text-[#092130]">
+            Unable to load organization settings
+          </h1>
+
+          <p role="alert" className="mt-3 text-sm text-red-700">
+            {error ?? "Your organization information could not be loaded."}
+          </p>
+
+          <p className="mt-3 text-sm text-[#64748B]">
+            Your saved organization information has not been changed.
+            Please retry before editing your settings.
+          </p>
+
+          <button
+            type="button"
+            onClick={() => setRetryCount((count) => count + 1)}
+            className="mt-6 rounded-md bg-[#114160] px-5 py-3 text-sm font-semibold text-white hover:bg-[#092130]"
+          >
+            Retry loading
+          </button>
         </div>
-      </main>
-    );
-  }
+      </div>
+    </main>
+  );
+}
+
 
   return (
     <main className="min-h-screen bg-[#F8FAFC]">
@@ -317,8 +375,7 @@ export default function NonprofitSettingsPage() {
               Organization Information
             </h2>
             <p className="mt-2 text-sm text-[#64748B]">
-              Keep your nonprofit's details accurate and
-              up to date.
+              Keep your nonprofit&apos;s details accurate and
             </p>
           </div>
 
