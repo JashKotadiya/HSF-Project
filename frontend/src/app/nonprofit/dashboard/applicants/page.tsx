@@ -7,6 +7,7 @@ import supabase from "@/lib/supabase";
 import { useAuth } from "@/components/auth/AuthProvider";
 import PageHeader from "@/components/layout/PageHeader";
 import StatusBadge from "@/components/applications/StatusBadge";
+import { messageLink } from "@/lib/messaging";
 import {
   Application,
   ApplicationStatus,
@@ -318,6 +319,9 @@ function ApplicantsDashboard() {
                   )}
 
                   <div className="flex flex-wrap gap-3 border-t border-[#E2E8F0] pt-6">
+                    <Link href={messageLink(selected.id)} className="w-full text-sm font-semibold text-[#114160] underline">
+                      {selected.status === "rejected" ? "View conversation" : "Message volunteer"}
+                    </Link>
                     <button
                       type="button"
                       disabled={updatingId !== null || selected.status === "approved"}
