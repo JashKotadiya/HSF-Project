@@ -12,10 +12,12 @@ const NAV_LINKS: Record<AppRole, { href: string; label: string }[]> = {
     { href: "/projects", label: "Browse Projects" },
     { href: "/volunteer/projects", label: "My Projects" },
     { href: "/volunteer/profile", label: "My Profile" },
+    { href: "/messages", label: "Messages" },
   ],
   nonprofit: [
     { href: "/nonprofit/dashboard", label: "My Projects" },
     { href: "/nonprofit/dashboard/applicants", label: "Applicants" },
+    { href: "/messages", label: "Messages" },
   ],
 };
 
@@ -44,8 +46,8 @@ export default function Navbar() {
   const currentHref = activeHref(pathname, links);
 
   return (
-    <nav className="sticky top-0 z-50 h-16 w-full border-b border-[#E2E8F0] bg-white/80 px-6 backdrop-blur-md">
-      <div className="mx-auto flex h-full max-w-7xl items-center justify-between">
+    <nav className="sticky top-0 z-50 w-full border-b border-[#E2E8F0] bg-white/80 px-4 backdrop-blur-md sm:px-6">
+      <div className="mx-auto flex min-h-16 max-w-7xl flex-wrap items-center justify-between gap-3 py-3">
         <Link href={homeHref} className="flex items-center gap-3">
           <span className="text-xl font-extrabold tracking-tight text-[#092130]">
             Human Service Forum
@@ -57,7 +59,7 @@ export default function Navbar() {
           )}
         </Link>
 
-        <div className="flex items-center gap-6">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
           {loading ? (
             <div className="h-9 w-24 animate-pulse rounded-md bg-[#F1F5F9]" />
           ) : (
@@ -66,6 +68,7 @@ export default function Navbar() {
                 <Link
                   key={link.href}
                   href={link.href}
+                  aria-current={currentHref === link.href ? "page" : undefined}
                   className={`text-sm font-semibold transition hover:text-[#114160] ${
                     currentHref === link.href ? "text-[#114160]" : "text-[#475569]"
                   }`}

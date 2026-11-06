@@ -8,6 +8,7 @@ import PageHeader from "@/components/layout/PageHeader";
 import StatusBadge from "@/components/applications/StatusBadge";
 import type { Application } from "@/lib/applications";
 import type { Project } from "@/lib/projects";
+import { messageLink } from "@/lib/messaging";
 
 type MyApplication = Pick<Application, "id" | "project_id" | "status" | "created_at"> & {
   project?: Pick<Project, "id" | "title" | "organization_name" | "location" | "status">;
@@ -166,7 +167,10 @@ function ApplicationCard({ app }: { app: MyApplication }) {
           {project?.location ? ` · ${project.location}` : ""}
         </p>
       </div>
-      <div className="flex items-center justify-between border-t border-[#E2E8F0] bg-[#F8FAFC] px-6 py-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#E2E8F0] bg-[#F8FAFC] px-6 py-4">
+        <Link href={messageLink(app.id)} className="text-sm font-semibold text-[#114160] underline">
+          {app.status === "rejected" ? "View conversation" : "Message organization"}
+        </Link>
         <span className="text-xs font-medium text-[#64748B]">
           {project ? (isOpen ? "Open project" : "Project closed") : "Removed"}
         </span>
