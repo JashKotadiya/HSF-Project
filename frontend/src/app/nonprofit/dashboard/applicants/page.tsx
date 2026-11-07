@@ -41,6 +41,7 @@ function ApplicantsDashboard() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   const updatingRef = useRef<string | null>(null);
 
   const viewedIds = useRef(new Set<string>());
@@ -48,11 +49,23 @@ function ApplicantsDashboard() {
   useEffect(() => {
     if (!userId) return;
     const load = async () => {
-      const { data: myProjects } = await supabase
+      setLoading(true);
+      setError(null);
+
+      const { data: myProjects, error: projectsError } = await supabase
         .from("posts")
         .select("id, title")
         .eq("user_id", userId)
         .order("created_at", { ascending: false });
+
+      if (projectsError) {
+        setError(`Couldn't load your projects: ${projectsError.message}`);
+        setProjects([]);
+        setApplications([]);
+        setLoading(false);
+        return;
+      }
+
       const projectList = (myProjects ?? []) as ProjectSummary[];
       setProjects(projectList);
 
@@ -64,11 +77,13 @@ function ApplicantsDashboard() {
           .order("created_at", { ascending: false });
         if (appsError) setError(`${appsError.message}. ${SETUP_HINT}`);
         setApplications((apps ?? []) as Application[]);
+      } else {
+        setApplications([]);
       }
       setLoading(false);
     };
     void load();
-  }, [userId]);
+  }, [userId, retryCount]);
 
   const projectTitles = useMemo(
     () => new Map(projects.map((p) => [p.id, p.title])),
@@ -161,57 +176,78 @@ function ApplicantsDashboard() {
       />
 
       <div className="mx-auto max-w-7xl px-6 py-12">
-        {error && (
-          <div className="mb-6 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">{error}</div>
-        )}
-
-        <div className="mb-6 flex flex-col gap-4 rounded-xl border border-[#E2E8F0] bg-white p-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex flex-wrap gap-2">
-            {STATUS_FILTERS.map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setStatusFilter(s)}
-                className={`rounded-full px-3 py-1.5 text-sm font-semibold transition ${
-                  statusFilter === s
-                    ? "bg-[#114160] text-white"
-                    : "bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0]"
-                }`}
-              >
-                {s === "all" ? "All" : STATUS_LABELS[s]} ({countFor(s)})
-              </button>
-            ))}
-          </div>
-          <select
-            value={projectFilter}
-            onChange={(e) => setProjectFilter(e.target.value)}
-            className="rounded-md border border-[#CBD5E1] bg-white px-3 py-2 text-sm font-medium text-[#0F172A] outline-none focus:border-[#114160]"
-          >
-            <option value="all">All projects</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.title}
-              </option>
-            ))}
-          </select>
-        </div>
-
         {loading ? (
           <div className="h-96 animate-pulse rounded-xl bg-white" />
-        ) : projects.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[#CBD5E1] bg-white py-20 text-center">
-            <h2 className="text-lg font-semibold text-[#092130]">No projects yet</h2>
-            <p className="mt-2 text-sm text-[#475569]">Create a project so volunteers can apply to it.</p>
-            <Link
-              href="/nonprofit/dashboard/edit/new"
+        ) : error && projects.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-xl border border-red-200 bg-white py-20 text-center">
+            <h2 className="text-lg font-semibold text-[#092130]">Couldn&apos;t load applicants</h2>
+            <p role="alert" className="mt-2 max-w-md text-sm text-red-700">
+              {error}
+            </p>
+            <p className="mt-2 max-w-md text-sm text-[#475569]">
+              This is a temporary problem loading your projects. Your listings were not removed.
+            </p>
+            <button
+              type="button"
+              onClick={() => setRetryCount((count) => count + 1)}
               className="mt-6 rounded-md bg-[#114160] px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-[#092130]"
             >
-              + Create Project
-            </Link>
+              Retry
+            </button>
           </div>
         ) : (
-          <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
-            <aside className="w-full shrink-0 rounded-xl border border-[#E2E8F0] bg-white p-6 lg:sticky lg:top-24 lg:w-80">
+          <>
+            {error && (
+              <div className="mb-6 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                {error}
+              </div>
+            )}
+
+            <div className="mb-6 flex flex-col gap-4 rounded-xl border border-[#E2E8F0] bg-white p-4 md:flex-row md:items-center md:justify-between">
+              <div className="flex flex-wrap gap-2">
+                {STATUS_FILTERS.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setStatusFilter(s)}
+                    className={`rounded-full px-3 py-1.5 text-sm font-semibold transition ${
+                      statusFilter === s
+                        ? "bg-[#114160] text-white"
+                        : "bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0]"
+                    }`}
+                  >
+                    {s === "all" ? "All" : STATUS_LABELS[s]} ({countFor(s)})
+                  </button>
+                ))}
+              </div>
+              <select
+                value={projectFilter}
+                onChange={(e) => setProjectFilter(e.target.value)}
+                className="rounded-md border border-[#CBD5E1] bg-white px-3 py-2 text-sm font-medium text-[#0F172A] outline-none focus:border-[#114160]"
+              >
+                <option value="all">All projects</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {projects.length === 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[#CBD5E1] bg-white py-20 text-center">
+                <h2 className="text-lg font-semibold text-[#092130]">No projects yet</h2>
+                <p className="mt-2 text-sm text-[#475569]">Create a project so volunteers can apply to it.</p>
+                <Link
+                  href="/nonprofit/dashboard/edit/new"
+                  className="mt-6 rounded-md bg-[#114160] px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-[#092130]"
+                >
+                  + Create Project
+                </Link>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
+                <aside className="w-full shrink-0 rounded-xl border border-[#E2E8F0] bg-white p-6 lg:sticky lg:top-24 lg:w-80">
               <input
                 type="text"
                 value={searchTerm}
@@ -347,6 +383,8 @@ function ApplicantsDashboard() {
               )}
             </section>
           </div>
+            )}
+          </>
         )}
       </div>
     </main>
