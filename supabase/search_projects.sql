@@ -12,13 +12,21 @@
 --
 -- Uses the caller's permissions and existing RLS policies.
 
+begin;
+
+-- Remove the old signatures so named calls have exactly one candidate. The
+-- first five arguments keep their original order for positional callers too.
+drop function if exists public.search_projects(text, text, text[], integer, integer);
+drop function if exists public.search_projects(text, text, text[], text[], integer, integer);
+
 create or replace function public.search_projects(
   p_keyword text default null,
   p_status text default 'Active',
   p_tech_stack text[] default null,
-  p_causes text[] default null,
   p_limit integer default 20,
-  p_offset integer default 0
+  p_offset integer default 0,
+  p_causes text[] default null,
+  p_sort text default 'relevance'
 )
 returns setof public.posts
 language sql
@@ -54,6 +62,8 @@ as $$
           p.title,
           p.content,
           p.cause,
+          to_jsonb(p)->>'organization_name',
+          to_jsonb(p)->>'location',
           p.skills_needed::text
         )
       ) @@ plainto_tsquery(
@@ -67,6 +77,8 @@ as $$
         p.title,
         p.content,
         p.cause,
+        to_jsonb(p)->>'organization_name',
+        to_jsonb(p)->>'location',
         p.skills_needed::text
       ) ilike '%' || trim(p_keyword) || '%'
     )
@@ -107,9 +119,12 @@ and (
     )
 
   order by
+    -- Sort the entire result before pagination, with stable tie breakers.
+    case when p_sort = 'newest' then p.created_at end desc nulls last,
+    case when p_sort = 'oldest' then p.created_at end asc nulls last,
     -- Put the most relevant keyword matches first.
     case
-      when nullif(trim(p_keyword), '') is null
+      when p_sort in ('newest', 'oldest') or nullif(trim(p_keyword), '') is null
       then 0
       else ts_rank(
         to_tsvector(
@@ -119,6 +134,8 @@ and (
             p.title,
             p.content,
             p.cause,
+            to_jsonb(p)->>'organization_name',
+            to_jsonb(p)->>'location',
             p.skills_needed::text
           )
         ),
@@ -139,9 +156,11 @@ $$;
 -- Supabase clients to invoke this search RPC.
 -- Existing RLS policies still apply.
 revoke all on function public.search_projects(
-  text, text, text[], text[], integer, integer
+  text, text, text[], integer, integer, text[], text
 ) from public;
 
 grant execute on function public.search_projects(
-  text, text, text[], text[], integer, integer
+  text, text, text[], integer, integer, text[], text
 ) to anon, authenticated;
+
+commit;

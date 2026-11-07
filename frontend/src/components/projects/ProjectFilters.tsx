@@ -1,5 +1,8 @@
 "use client";
 
+import type { ReactNode } from "react";
+import Link from "next/link";
+
 export type Filters = {
   search: string;
   status: string;
@@ -14,23 +17,31 @@ function toggle(list: string[], value: string) {
 export default function ProjectFilters({
   filters,
   onChange,
+  onClear,
   causeOptions,
   skillOptions,
   canUseMyInterests,
   useMyInterests,
   onToggleUseMyInterests,
   savedInterests,
+  interestsLoading,
+  interestsError,
+  onRetryInterests,
 }: {
   filters: Filters;
   onChange: (filters: Filters) => void;
+  onClear: () => void;
   causeOptions: string[];
   skillOptions: string[];
   canUseMyInterests: boolean;
   useMyInterests: boolean;
   onToggleUseMyInterests: () => void;
   savedInterests: string[];
+  interestsLoading: boolean;
+  interestsError: boolean;
+  onRetryInterests: () => void;
 }) {
-  const hasFilters = filters.search || filters.status !== "Active" || filters.causes.length > 0 || filters.skills.length > 0;
+  const hasFilters = useMyInterests || filters.search || filters.status !== "Active" || filters.causes.length > 0 || filters.skills.length > 0;
 
   return (
     <div className="space-y-8 rounded-xl border border-[#E2E8F0] bg-white p-6">
@@ -42,7 +53,7 @@ export default function ProjectFilters({
           {hasFilters && (
             <button
               type="button"
-              onClick={() => onChange({ search: "", status: "Active", causes: [], skills: [] })}
+              onClick={onClear}
               className="text-xs font-semibold text-[#114160] hover:underline"
             >
               Clear all
@@ -76,7 +87,7 @@ export default function ProjectFilters({
         </select>
       </div>
 
-      {causeOptions.length > 0 && (
+      {(causeOptions.length > 0 || canUseMyInterests) && (
         <CheckboxGroup
           title="Interests / Cause Areas"
           options={causeOptions}
@@ -88,16 +99,22 @@ export default function ProjectFilters({
                 <input
                   type="checkbox"
                   checked={useMyInterests}
-                  disabled={savedInterests.length === 0}
+                  disabled={!useMyInterests && (interestsLoading || interestsError || savedInterests.length === 0)}
                   onChange={onToggleUseMyInterests}
                   className="mt-0.5 h-4 w-4 rounded border-[#CBD5E1] text-[#114160] focus:ring-[#114160] disabled:cursor-not-allowed disabled:opacity-60"
                 />
                 <span className="text-xs text-[#475569]">
-                  {savedInterests.length > 0
-                    ? "Use my interests"
-                    : "Add interests in your profile, then return to use them here."}
+                  Use my interests
                 </span>
               </label>
+              {interestsLoading ? <p role="status" className="mt-2 text-xs text-[#475569]">Loading your interests...</p> : interestsError ? (
+                <p role="alert" className="mt-2 text-xs text-red-700">
+                  Couldn&apos;t load your saved interests.
+                  <button type="button" className="ml-1 underline" onClick={onRetryInterests}>Retry interests</button>
+                </p>
+              ) : savedInterests.length === 0 ? (
+                <p className="mt-2 text-xs text-[#475569]"><Link href="/volunteer/profile#interests-heading" className="underline">Add interests in your profile</Link>, then return to use them here.</p>
+              ) : null}
             </div>
           ) : null}
         />
@@ -126,7 +143,7 @@ function CheckboxGroup({
   options: string[];
   selected: string[];
   onToggle: (value: string) => void;
-  footer?: JSX.Element | null;
+  footer?: ReactNode;
 }) {
   return (
     <div>

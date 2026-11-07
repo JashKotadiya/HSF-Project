@@ -12,7 +12,7 @@ const project = {
 };
 const auth = { user: { id: 'volunteer-1' }, role: 'volunteer', loading: false };
 
-function createFetch({ applicationStatus = null, profile = { cause_areas: ['Education'] }, failApplications = false } = {}) {
+function createFetch({ applicationStatus = null, interests = ['Education'], failApplications = false } = {}) {
   return request => {
     if (request.url.pathname.includes('/rpc/search_projects')) {
       const keyword = request.body?.p_keyword;
@@ -21,8 +21,11 @@ function createFetch({ applicationStatus = null, profile = { cause_areas: ['Educ
       if (causes.length > 0 && !causes.includes(project.cause)) return json([]);
       return json([project]);
     }
-    if (request.url.pathname.includes('/profiles')) {
-      return json(profile ?? null);
+    if (request.url.pathname.includes('/volunteer_interests')) {
+      return json(interests.map(cause => ({ cause })));
+    }
+    if (request.url.pathname.includes('/cause_categories')) {
+      return json([{ name: 'Education' }]);
     }
     if (request.url.pathname.includes('/applications')) {
       if (failApplications) return json({ message: 'Permission denied', code: '42501' }, 403);
@@ -167,9 +170,9 @@ test('use my interests adds saved cause areas to backend search request', async 
 });
 
 test('missing saved interests shows guidance while manual filters still render', async t => {
-  const ui = setup(t, { fetch: createFetch({ profile: {} }) });
+  const ui = setup(t, { fetch: createFetch({ interests: [] }) });
   await ui.settle();
-  assert.ok(ui.text().includes('Add interests in your profile, then return to use them here.'));
+  assert.ok(ui.text().includes('Add interests in your profile'));
   assert.ok(ui.text().includes('Interests / Cause Areas'));
 });
 

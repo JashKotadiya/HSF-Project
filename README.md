@@ -56,6 +56,23 @@ The scripts in `supabase/` extend that existing schema:
 
 - [profiles_signup.sql](supabase/profiles_signup.sql) configures profile access policies and creates profiles when users sign up.
 - [applications.sql](supabase/applications.sql) configures application fields, access policies, and the private `resumes` storage bucket.
+- [volunteer_profiles.sql](supabase/volunteer_profiles.sql) adds editable profile details and resume policies.
+- [interests.sql](supabase/interests.sql) adds the shared cause-category list and private saved volunteer preferences. Run it after `profiles_signup.sql`. Existing project causes are retained and registered, and new project causes are registered automatically.
+- [search_projects.sql](supabase/search_projects.sql) provides cause/skill/status/keyword filtering and stable server-side sorting and pagination. It replaces the earlier search signatures while preserving the original five positional arguments and named calls.
+
+Apply `interests.sql` and the updated `search_projects.sql` **before deploying the frontend changes for PR #81**. Both scripts run in transactions and can be rerun. Without the updated search function, the browser shows a retryable error rather than returning incomplete matches. Volunteers save their preferences in the **Interests / Cause Areas** section of their profile; those selections are independent of technical skills.
+
+Local regression checks (no production database needed):
+
+```bash
+npm ci
+npm run test:local
+cd frontend
+npm ci
+npm run test:applications
+npm run test:auth
+npx tsc --noEmit --incremental false
+```
 
 These scripts assume the base tables already exist. For a new Supabase project, obtain the base schema from a maintainer before applying these scripts in the SQL Editor.
 
