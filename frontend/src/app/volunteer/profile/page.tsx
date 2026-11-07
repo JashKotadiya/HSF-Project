@@ -12,6 +12,7 @@ import PageHeader from "@/components/layout/PageHeader";
 import { useAuth } from "@/components/auth/AuthProvider";
 import supabase from "@/lib/supabase";
 import { RESUME_BUCKET } from "@/lib/applications";
+import InterestPreferences from "@/components/profile/InterestPreferences";
 
 const MAX_RESUME_MB = 10;
 const RESUME_EXTENSIONS = /\.(pdf|docx?)$/i;
@@ -694,6 +695,7 @@ if (
               : "Save profile"}
           </button>
         </form>
+        <InterestPreferences />
       </div>
     </main>
   );
