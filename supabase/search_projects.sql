@@ -16,6 +16,7 @@ create or replace function public.search_projects(
   p_keyword text default null,
   p_status text default 'Active',
   p_tech_stack text[] default null,
+  p_causes text[] default null,
   p_limit integer default 20,
   p_offset integer default 0
 )
@@ -95,6 +96,16 @@ and (
   )
 )
 
+    -- Match selected cause areas (case-insensitive).
+    and (
+      coalesce(cardinality(p_causes), 0) = 0
+      or exists (
+        select 1
+        from unnest(p_causes) as selected(cause)
+        where lower(trim(coalesce(p.cause, ''))) = lower(trim(selected.cause))
+      )
+    )
+
   order by
     -- Put the most relevant keyword matches first.
     case
@@ -128,9 +139,9 @@ $$;
 -- Supabase clients to invoke this search RPC.
 -- Existing RLS policies still apply.
 revoke all on function public.search_projects(
-  text, text, text[], integer, integer
+  text, text, text[], text[], integer, integer
 ) from public;
 
 grant execute on function public.search_projects(
-  text, text, text[], integer, integer
+  text, text, text[], text[], integer, integer
 ) to anon, authenticated;

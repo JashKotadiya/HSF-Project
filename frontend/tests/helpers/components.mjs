@@ -19,6 +19,7 @@ export function deferred() {
 export function mount(t, filename, options) {
   const requests = [], confirmations = [], hooks = [], effects = [], cleanups = [];
   const modules = new Map(), listeners = new Map();
+  const sessionStorage = options.sessionStorage ?? new Map();
   let hookIndex = 0, tree, auth = options.auth;
   const client = createClient('https://database.example.test', 'test-anon-key', {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
@@ -65,6 +66,11 @@ export function mount(t, filename, options) {
         confirm(message) { confirmations.push(message); return options.confirm?.(message) ?? true; },
         addEventListener(name, fn) { listeners.set(name, fn); },
         removeEventListener(name, fn) { if (listeners.get(name) === fn) listeners.delete(name); },
+        sessionStorage: {
+          getItem(key) { return sessionStorage.has(key) ? sessionStorage.get(key) : null; },
+          setItem(key, value) { sessionStorage.set(key, String(value)); },
+          removeItem(key) { sessionStorage.delete(key); },
+        },
       },
       require(id) {
         if (id === 'react') return react;
