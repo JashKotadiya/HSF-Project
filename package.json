@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "test": "node supabase/tests/test-application-rls.mjs",
-    "test:local": "node --test tests/application-form.test.cjs tests/applications-setup.test.cjs"
+    "test:local": "node --test tests/application-form.test.cjs tests/applications-setup.test.cjs tests/conversations.test.cjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.11"
