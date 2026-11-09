@@ -3,7 +3,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, FunctionsHttpError } from '@supabase/supabase-js';
 import { formatDistanceToNow } from 'date-fns';
 
 const source = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../src');
@@ -72,6 +72,8 @@ export function mount(t, filename, options) {
         if (id === 'next/link') return { __esModule: true, default: 'Link' };
         if (id === 'next/navigation') return { useSearchParams: () => new URLSearchParams() };
         if (id === 'date-fns') return { formatDistanceToNow };
+                if (id === 'date-fns') return { formatDistanceToNow };
+        if (id === '@supabase/supabase-js') return { FunctionsHttpError };
         if (id === '@/lib/supabase') return { __esModule: true, default: client };
         if (id === '@/components/auth/AuthProvider') return { useAuth: () => auth };
         if (id === '@/components/layout/PageHeader') return { __esModule: true, default: 'PageHeader' };
