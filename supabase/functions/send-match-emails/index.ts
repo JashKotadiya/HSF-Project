@@ -200,6 +200,16 @@ Deno.serve(async (req) => {
     return reply("invalid request", 400);
   }
 
+
+    // Only a change *to* approved starts a delivery. Updates to an application that
+  // was already approved include this function's own bookkeeping (recording or
+  // releasing a delivery), which the webhook reports back as new events. Acting on
+  // those would turn one failed send into an endless loop of retries. The previous
+  // status is only used to skip work: what is sent still depends on the stored row.
+  if (payload.type === "UPDATE" && payload.old_record?.status === "approved") {
+    return reply("ignored");
+  }
+
   try {
     const app = await loadApplication(id);
     if (!app) return reply("application not found", 404);

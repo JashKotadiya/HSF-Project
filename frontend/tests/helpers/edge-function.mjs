@@ -43,7 +43,7 @@ export function loadFunction(name, { env, fetch }) {
 // In-memory stand-in for the three services the functions talk to over HTTP:
 // the database REST API, the Auth admin API, and the email provider. It records
 // every request, so tests can also prove that something was NOT contacted.
-export function createBackend({ tables = {}, users = {}, emailFailures = [], authFailures = [], beforeRequest } = {}) {
+export function createBackend({ tables = {}, users = {}, emailFailures = [], authFailures = [], beforeRequest, onChange } = {}) {
   const rows = Object.fromEntries(Object.entries(tables).map(([name, list]) => [name, structuredClone(list)]));
   const requests = [], emails = [], writes = [];
   let emailAttempts = 0;
@@ -94,7 +94,11 @@ export function createBackend({ tables = {}, users = {}, emailFailures = [], aut
         return jsonResponse(found.map(row => pick(row, select)));
       }
       if (method === 'PATCH') {
-        found.forEach(row => Object.assign(row, body));
+                found.forEach(row => {
+          const before = { ...row };
+          Object.assign(row, body);
+          onChange?.({ table, old: before, record: { ...row } });
+        });
         writes.push({ table, filters: Object.fromEntries(url.searchParams), body, matched: found.length });
         return headers.get('Prefer')?.includes('return=representation')
           ? jsonResponse(found.map(row => pick(row, select)))
@@ -106,6 +110,7 @@ export function createBackend({ tables = {}, users = {}, emailFailures = [], aut
 
   return {
     fetch, requests, emails, writes,
+        emailAttempts: () => emailAttempts,
     rows: name => rows[name],
     // Calls that reached the database or Auth (the email provider is tracked separately).
     reads: () => requests.filter(request => request.url.hostname !== 'api.resend.com'),

@@ -305,6 +305,37 @@ test('a failed new-application notification can be retried', async () => {
   assert.equal(backend.emails.length, 1);
 });
 
+// The function updates the application itself (to record delivery), and the database
+// webhook reports those updates back to the function as new UPDATE events.
+async function deliverOwnWrites(handler, events, rounds = 8) {
+  for (let round = 0; round < rounds && events.length; round++) {
+    for (const own of events.splice(0)) await call(handler, own);
+  }
+}
+
+test('the function\'s own delivery bookkeeping does not set off another delivery after a failed send', async () => {
+  const events = [];
+  const { backend, handler } = setup({
+    app: application({ status: 'approved' }),
+    backend: {
+      emailFailures: Array.from({ length: 50 }, (_, attempt) => attempt),
+      onChange: ({ old, record }) => events.push(event('UPDATE', record, old)),
+    },
+  });
+  const approval = event('UPDATE', application({ status: 'approved' }), application());
+  assert.equal((await call(handler, approval)).status, 500);
+  await deliverOwnWrites(handler, events);
+  assert.equal(backend.emailAttempts(), 1, 'one failed attempt, not a loop of retries');
+  assert.equal(backend.rows('applications')[0].match_emailed_at, null);
+});
+
+test('updates to an application that was already approved do not send approval emails again', async () => {
+  const { backend, handler } = setup({ app: application({ status: 'approved' }) });
+  const bookkeeping = event('UPDATE', application({ status: 'approved', poster_notified_at: '2026-01-01T00:00:00Z' }), application({ status: 'approved' }));
+  assert.equal((await call(handler, bookkeeping)).status, 200);
+  nothingHappened(backend);
+});
+
 test('an account lookup failure sends nothing, reports an error, and releases the claim', async () => {
   const { backend, handler } = setup({ app: application({ status: 'approved' }), backend: { authFailures: [VOLUNTEER_ID] } });
   const response = await call(handler, event('UPDATE', application({ status: 'approved' }), application()));
