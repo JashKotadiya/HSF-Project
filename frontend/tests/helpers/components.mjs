@@ -19,6 +19,7 @@ export function deferred() {
 export function mount(t, filename, options) {
   const requests = [], confirmations = [], hooks = [], effects = [], cleanups = [];
   const modules = new Map(), listeners = new Map();
+  const sessionStorage = options.sessionStorage ?? new Map();
   let hookIndex = 0, tree, auth = options.auth;
   const client = createClient('https://database.example.test', 'test-anon-key', {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
@@ -63,8 +64,13 @@ export function mount(t, filename, options) {
       exports: exported, console, Error, Date,
       window: {
         confirm(message) { confirmations.push(message); return options.confirm?.(message) ?? true; },
-        addEventListener(name, fn) { listeners.set(name, fn); },
-        removeEventListener(name, fn) { if (listeners.get(name) === fn) listeners.delete(name); },
+        addEventListener(name, fn) { if (!listeners.has(name)) listeners.set(name, new Set()); listeners.get(name).add(fn); },
+        removeEventListener(name, fn) { listeners.get(name)?.delete(fn); },
+        sessionStorage: {
+          getItem(key) { if (options.storageError) throw new Error('Storage unavailable'); return sessionStorage.has(key) ? sessionStorage.get(key) : null; },
+          setItem(key, value) { if (options.storageError) throw new Error('Storage unavailable'); sessionStorage.set(key, String(value)); },
+          removeItem(key) { if (options.storageError) throw new Error('Storage unavailable'); sessionStorage.delete(key); },
+        },
       },
       require(id) {
         if (id === 'react') return react;
@@ -112,7 +118,7 @@ export function mount(t, filename, options) {
   t.after(async () => { cleanups.forEach(fn => fn?.()); await client.auth.stopAutoRefresh(); });
   return { render, settle, all, find, text, button, requests, confirmations,
     setAuth(value) { auth = value; render(); },
-    focus() { listeners.get('focus')?.(); },
+    focus() { listeners.get('focus')?.forEach(fn => fn()); },
     click(label) { const element = button(label); if (!element || element.props.disabled) throw new Error(`Unavailable button: ${label}`); return element.props.onClick(); },
   };
 }

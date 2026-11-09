@@ -4,11 +4,12 @@ import { getSkills, Project } from "@/lib/projects";
 import StatusBadge from "@/components/applications/StatusBadge";
 import type { ApplicationStatus } from "@/lib/applications";
 
-export default function ProjectCard({ project, applicationStatus, checkingApplication, applicationError }: {
+export default function ProjectCard({ project, applicationStatus, checkingApplication, applicationError, detailsHref }: {
   project: Project;
   applicationStatus?: ApplicationStatus;
   checkingApplication?: boolean;
   applicationError?: boolean;
+  detailsHref?: string;
 }) {
   const { id, title, content, cause, location, created_at } = project;
   const organizationName = project.organization_name || "Partner Organization";
@@ -75,7 +76,7 @@ export default function ProjectCard({ project, applicationStatus, checkingApplic
       <div className="flex items-center justify-between border-t border-[#E2E8F0] bg-[#F8FAFC] px-6 py-4">
         <span className="text-xs font-medium text-[#64748B]">{location || "Remote"}</span>
         <Link
-          href={applicationStatus ? "/volunteer/projects" : `/projects/${id}`}
+          href={applicationStatus ? "/volunteer/projects" : detailsHref ?? `/projects/${id}`}
           className="inline-flex items-center justify-center rounded-md bg-[#114160] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#092130]"
         >
           {applicationStatus ? "View My Application" : checkingApplication || applicationError ? "View Details" : "View & Apply"}
