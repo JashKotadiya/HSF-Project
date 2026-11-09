@@ -198,3 +198,6 @@ create policy "resumes_select_project_owner"
 
 -- Tracks that the match-disclosure email was sent (issue #17).
 alter table public.applications add column if not exists match_emailed_at timestamptz;
+
+-- Tracks that the poster was told about the new application, so a repeated event can't email them twice.
+alter table public.applications add column if not exists poster_notified_at timestamptz;
