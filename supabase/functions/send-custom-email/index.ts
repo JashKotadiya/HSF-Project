@@ -21,7 +21,7 @@ const json = (body: unknown, status = 200) =>
 const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-async function sendEmail(to: string, subject: string, html: string, replyTo: string) {
+async function sendEmail(to: string, subject: string, html: string, replyTo?: string) {
   const recipient = TEST_EMAIL_OVERRIDE ?? to;
   const body = TEST_EMAIL_OVERRIDE
     ? `<p><i>[Test mode: intended for ${esc(to)}]</i></p>${html}`
@@ -32,9 +32,38 @@ async function sendEmail(to: string, subject: string, html: string, replyTo: str
       Authorization: `Bearer ${RESEND_API_KEY}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ from: FROM_EMAIL, to: recipient, subject, html: body, reply_to: replyTo }),
+    body: JSON.stringify({
+      from: FROM_EMAIL,
+      to: recipient,
+      subject,
+      html: body,
+      ...(replyTo ? { reply_to: replyTo } : {}),
+    }),
   });
   if (!res.ok) throw new Error(`Resend ${res.status}: ${await res.text()}`);
+}
+
+// Private delivery address: the applicant's account email, looked up from the account
+// record. It is never taken from the application, and never shown to the sender.
+async function accountEmail(userId: string) {
+  const { data, error } = await supabase.auth.admin.getUserById(userId);
+  // A deleted account simply has no address; anything else is a real failure.
+  if (error?.status === 404) return undefined;
+  if (error) throw error;
+  return data?.user?.email;
+}
+
+// The sender's optional contact address: only what they chose to share. Without one,
+// the message carries no way to reply, and their login email is never revealed.
+async function sharedContact(userId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("contact_email, share_contact")
+    .eq("id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  const email = data?.contact_email?.trim();
+  return data?.share_contact === true && email ? email : null;
 }
 
 Deno.serve(async (req) => {
@@ -60,7 +89,7 @@ Deno.serve(async (req) => {
 
     const { data: app } = await supabase
       .from("applications")
-      .select("id, project_id, volunteer_id, applicant_email")
+      .select("id, project_id, volunteer_id")
       .eq("id", application_id)
       .maybeSingle();
     if (!app) return json({ error: "Application not found." }, 404);
@@ -75,21 +104,22 @@ Deno.serve(async (req) => {
       return json({ error: "You can only email applicants to your own projects." }, 403);
     }
 
-    const to =
-      app.applicant_email ??
-      (await supabase.auth.admin.getUserById(app.volunteer_id)).data?.user?.email;
+    const to = await accountEmail(app.volunteer_id);
     if (!to) return json({ error: "This applicant has no email address." }, 400);
 
+    const replyTo = await sharedContact(sender.id);
     const html = `<p>${esc(cleanMessage).replace(/\n/g, "<br>")}</p>
       <hr>
       <p style="color:#64748B;font-size:12px">
         Sent by ${esc(post.organization_name || "a nonprofit")} about your application to
-        <b>${esc(post.title || "a project")}</b> on Human Service Forum.
-        Reply to this email to respond to ${esc(sender.email)}.
+        <b>${esc(post.title || "a project")}</b> on Human Service Forum.${
+          replyTo ? ` Reply to this email to respond to ${esc(replyTo)}.` : ""
+        }
       </p>`;
 
-    await sendEmail(to, cleanSubject, html, sender.email);
-    return json({ ok: true });
+    await sendEmail(to, cleanSubject, html, replyTo ?? undefined);
+    // reply_enabled tells the sender whether the applicant can answer by email.
+    return json({ ok: true, reply_enabled: replyTo !== null });
   } catch (err) {
     console.error(err);
     return json({ error: "Couldn't send the email. Please try again." }, 500);

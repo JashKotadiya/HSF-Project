@@ -10,6 +10,7 @@ export interface Application {
   resume_path?: string | null;
   answers?: { q: string; a: string }[] | null;
   applicant_name?: string | null;
+  /** Always empty now: login emails are private. Use get_shared_contact for an address someone chose to share. */
   applicant_email?: string | null;
 }
 

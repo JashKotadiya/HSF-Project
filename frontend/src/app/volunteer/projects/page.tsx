@@ -6,6 +6,7 @@ import supabase from "@/lib/supabase";
 import { useAuth } from "@/components/auth/AuthProvider";
 import PageHeader from "@/components/layout/PageHeader";
 import StatusBadge from "@/components/applications/StatusBadge";
+import SharedContact from "@/components/applications/SharedContact";
 import type { Application } from "@/lib/applications";
 import type { Project } from "@/lib/projects";
 
@@ -165,6 +166,11 @@ function ApplicationCard({ app }: { app: MyApplication }) {
           Applied {new Date(app.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
           {project?.location ? ` · ${project.location}` : ""}
         </p>
+                {(app.status === "pending" || app.status === "approved") && (
+          <div className="mt-3">
+            <SharedContact applicationId={app.id} label="Organization contact" />
+          </div>
+        )}
       </div>
       <div className="flex items-center justify-between border-t border-[#E2E8F0] bg-[#F8FAFC] px-6 py-4">
         <span className="text-xs font-medium text-[#64748B]">

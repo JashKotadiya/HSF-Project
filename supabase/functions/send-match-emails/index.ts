@@ -52,13 +52,33 @@ async function sendEmail(to: string, subject: string, html: string, replyTo?: st
   if (!res.ok) throw new Error(`Resend ${res.status}: ${await res.text()}`);
 }
 
-// Addresses come from the account record, never from the event or from
-// applications.applicant_email, which the applicant types in.
+// Private delivery address: the account's login email, looked up from the account
+// record. It is used only to deliver a notification, never shown to anyone else, and
+// never taken from the event or from applications.applicant_email.
 async function accountEmail(userId: string) {
   const { data, error } = await supabase.auth.admin.getUserById(userId);
   if (error) throw error;
   return data?.user?.email;
 }
+
+// Optional contact address: only what the account holder chose to share. A blank
+// address, or one they have not turned sharing on for, counts as none.
+async function sharedContact(userId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("contact_email, share_contact")
+    .eq("id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  const email = data?.contact_email?.trim();
+  return data?.share_contact === true && email ? email : null;
+}
+
+// What an email says about the other person's contact: their shared address, or that there is none.
+const contactLine = (who: string, contact: string | null) =>
+  contact
+    ? `<p>Contact email: <a href="mailto:${esc(contact)}">${esc(contact)}</a></p>`
+    : `<p>${who} hasn't shared a contact email.</p>`;
 
 type Application = {
   id: string;
@@ -94,15 +114,21 @@ async function loadContext(app: Application) {
 
   return {
     post,
+    // where each notification is delivered (private)
     nonprofitEmail,
     volunteerEmail,
+    // what each person has chosen to share with the other (usually nothing)
+    nonprofitContact: await sharedContact(post.user_id),
+    volunteerContact: await sharedContact(app.volunteer_id),
     project: esc(post.title || "your project"),
     orgName: esc(post.organization_name || post.poster_name || "the organization"),
     volName: esc(app.applicant_name || "the volunteer"),
   };
 }
 
-// A volunteer applied: tell the poster who it is and how to reach them, once.
+// A volunteer applied: tell the poster, once. The volunteer's address is included only
+// if they chose to share one. If the organization shared a contact address, the
+// volunteer is told it too, so sharing works in both directions while pending.
 async function notifyNewApplicant(app: Application) {
   const { data: claimed, error } = await supabase
     .from("applications")
@@ -120,10 +146,19 @@ async function notifyNewApplicant(app: Application) {
       c.nonprofitEmail,
       `New applicant for ${c.post.title}`,
       `<p><b>${c.volName}</b> applied to <b>${c.project}</b>.</p>
-       <p>Contact: <a href="mailto:${esc(c.volunteerEmail)}">${esc(c.volunteerEmail)}</a></p>
+       ${contactLine("The volunteer", c.volunteerContact)}
        <p><a href="${esc(link)}">Review the application</a></p>`,
-      c.volunteerEmail,
+      c.volunteerContact ?? undefined,
     );
+    if (c.nonprofitContact) {
+      await sendEmail(
+        c.volunteerEmail,
+        `Contact for your application to ${c.post.title}`,
+        `<p>${c.orgName} shared a contact email for your application to <b>${c.project}</b>.</p>
+         ${contactLine("The organization", c.nonprofitContact)}`,
+        c.nonprofitContact,
+      );
+    }
     return reply("notified");
   } catch (err) {
     // Release the claim so a retry can try again.
@@ -132,9 +167,9 @@ async function notifyNewApplicant(app: Application) {
   }
 }
 
-// An application was approved: share contact details both ways, once. The claim
-// only succeeds if the stored status is "approved", so an event cannot make us
-// announce an approval that never happened.
+// An application was approved: tell both people, once, and pass along whichever contact
+// address each has chosen to share. The claim only succeeds if the stored status is
+// "approved", so an event cannot make us announce an approval that never happened.
 async function sendMatch(app: Application) {
   const { data: claimed, error } = await supabase
     .from("applications")
@@ -152,15 +187,15 @@ async function sendMatch(app: Application) {
       c.volunteerEmail,
       `You're matched: ${c.post.title}`,
       `<p>Great news! ${c.orgName} approved your application for <b>${c.project}</b>.</p>
-       <p>You can reach them at <a href="mailto:${esc(c.nonprofitEmail)}">${esc(c.nonprofitEmail)}</a>.</p>`,
-      c.nonprofitEmail,
+       ${contactLine("The organization", c.nonprofitContact)}`,
+      c.nonprofitContact ?? undefined,
     );
     await sendEmail(
       c.nonprofitEmail,
       `Match confirmed: ${c.post.title}`,
       `<p>You approved ${c.volName} for <b>${c.project}</b>.</p>
-       <p>You can reach them at <a href="mailto:${esc(c.volunteerEmail)}">${esc(c.volunteerEmail)}</a>.</p>`,
-      c.volunteerEmail,
+       ${contactLine("The volunteer", c.volunteerContact)}`,
+      c.volunteerContact ?? undefined,
     );
     return reply("sent");
   } catch (err) {
@@ -200,8 +235,7 @@ Deno.serve(async (req) => {
     return reply("invalid request", 400);
   }
 
-
-    // Only a change *to* approved starts a delivery. Updates to an application that
+  // Only a change *to* approved starts a delivery. Updates to an application that
   // was already approved include this function's own bookkeeping (recording or
   // releasing a delivery), which the webhook reports back as new events. Acting on
   // those would turn one failed send into an endless loop of retries. The previous

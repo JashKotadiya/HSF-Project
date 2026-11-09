@@ -11,12 +11,13 @@ export default function EmailApplicantForm({ applicationId }: { applicationId: s
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
+  const [replyEnabled, setReplyEnabled] = useState(true);
 
   const send = async () => {
     setSending(true);
     setError(null);
     setSent(false);
-    const { error: invokeError } = await supabase.functions.invoke("send-custom-email", {
+    const { data, error: invokeError } = await supabase.functions.invoke("send-custom-email", {
       body: { application_id: applicationId, subject, message },
     });
     setSending(false);
@@ -35,6 +36,7 @@ export default function EmailApplicantForm({ applicationId }: { applicationId: s
       return;
     }
     setSent(true);
+    setReplyEnabled(data?.reply_enabled !== false);
     setSubject("");
     setMessage("");
   };
@@ -72,11 +74,17 @@ export default function EmailApplicantForm({ applicationId }: { applicationId: s
         onChange={(e) => setMessage(e.target.value)}
         maxLength={3000}
         rows={5}
-        placeholder="Write your message. Replies will come straight to your email."
+        placeholder="Write your message. If you share a contact email, replies go to it."
         className={inputClass}
       />
       {error && <p className="text-sm text-red-600">{error}</p>}
       {sent && <p className="text-sm text-emerald-700">Email sent.</p>}
+            {sent && !replyEnabled && (
+        <p className="text-sm text-[#64748B]">
+          The applicant can&apos;t reply by email, because you haven&apos;t shared a contact email. You can add one under
+          Contact sharing.
+        </p>
+      )}
       <div className="flex gap-3">
         <button
           type="button"

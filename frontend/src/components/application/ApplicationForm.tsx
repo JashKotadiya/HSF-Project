@@ -160,7 +160,6 @@ export default function ApplicationForm({
         status: "pending",
         resume_path: resumePath,
         applicant_name: fullName.trim(),
-        applicant_email: email,
         answers: APPLICATION_QUESTIONS.map((q, i) => ({ q, a: answers[i].trim() })),
       });
       if (insertError) {
@@ -265,8 +264,12 @@ export default function ApplicationForm({
               />
             </div>
             <div className="space-y-2">
-              <label className="block text-sm font-semibold text-[#092130]">Email</label>
+              <label className="block text-sm font-semibold text-[#092130]">Account email</label>
               <input type="email" value={email} disabled className={`${inputClass} bg-[#F8FAFC] text-[#64748B]`} />
+              <p className="text-xs text-[#64748B]">
+                Used only to sign you in and send you updates. It is not shown to the organization. You can choose a
+                separate contact email to share under Contact sharing.
+              </p>
             </div>
           </div>
 

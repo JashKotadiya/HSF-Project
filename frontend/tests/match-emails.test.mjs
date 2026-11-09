@@ -33,9 +33,9 @@ const baseEnv = {
   MATCH_WEBHOOK_SECRET: SECRET,
 };
 
-function setup({ env = {}, app = application(), backend: backendOptions = {} } = {}) {
+function setup({ env = {}, app = application(), profiles = [], backend: backendOptions = {} } = {}) {
   const backend = createBackend({
-    tables: { applications: app ? [app] : [], posts: [project, otherProject] },
+    tables: { applications: app ? [app] : [], posts: [project, otherProject], profiles },
     users,
     ...backendOptions,
   });
@@ -228,7 +228,9 @@ test('a real new application notifies the project owner once, with a link to rev
   const [email] = backend.emails;
   assert.equal(email.to, 'owner@example.test');
   assert.equal(email.subject, 'New applicant for Community website');
-  assert.equal(email.reply_to, 'volunteer@example.test');
+    assert.equal(email.reply_to, undefined);
+  assert.ok(!email.html.includes('volunteer@example.test'));
+  assert.ok(email.html.includes("hasn't shared a contact email"));
   assert.ok(email.html.includes(`https://hsf.example.test/nonprofit/dashboard/applicants?project=${PROJECT_ID}`));
   assert.ok(backend.rows('applications')[0].poster_notified_at);
 });
@@ -240,8 +242,10 @@ test('a real approval emails both parties and records that it was sent', async (
   assert.deepEqual(recipients(backend), ['owner@example.test', 'volunteer@example.test']);
   const toVolunteer = backend.emails.find(email => email.to === 'volunteer@example.test');
   const toOwner = backend.emails.find(email => email.to === 'owner@example.test');
-  assert.ok(toVolunteer.html.includes('owner@example.test'));
-  assert.ok(toOwner.html.includes('volunteer@example.test'));
+  assert.ok(!toVolunteer.html.includes('owner@example.test'));
+  assert.ok(!toOwner.html.includes('volunteer@example.test'));
+  assert.ok(toVolunteer.html.includes("hasn't shared a contact email"));
+  assert.ok(toOwner.html.includes("hasn't shared a contact email"));
   assert.ok(backend.rows('applications')[0].match_emailed_at);
 });
 
@@ -351,4 +355,153 @@ test('error responses do not reveal internal details', async () => {
   assert.ok(!text.includes('provider down'));
   assert.ok(!text.includes('test-resend-key'));
   assert.ok(!text.includes('test-service-key'));
+});
+
+
+// ---- Optional contact sharing -------------------------------------------------
+// Login emails are used only to deliver notifications. What a person chooses to share
+// is a separate address, and nothing is passed on unless they turned sharing on.
+
+const VOLUNTEER_CONTACT = 'volunteer.contact@example.test';
+const OWNER_CONTACT = 'owner.contact@example.test';
+const LOGIN_ADDRESSES = ['owner@example.test', 'volunteer@example.test'];
+const profile = (id, contact_email, share_contact) => ({ id, contact_email, share_contact });
+const sharing = ({ volunteer = false, owner = false } = {}) => [
+  profile(VOLUNTEER_ID, VOLUNTEER_CONTACT, volunteer),
+  profile(OWNER_ID, OWNER_CONTACT, owner),
+];
+const emailTo = (backend, address) => backend.emails.filter(email => email.to === address);
+// Login addresses must never appear inside a message or as a reply address.
+const leakedLogins = backend => backend.emails.flatMap(email =>
+  LOGIN_ADDRESSES.filter(login => JSON.stringify({ html: email.html, reply_to: email.reply_to }).includes(login)));
+
+const cases = [
+  ['neither person shares', { volunteer: false, owner: false }],
+  ['only the volunteer shares', { volunteer: true, owner: false }],
+  ['only the organization shares', { volunteer: false, owner: true }],
+  ['both people share', { volunteer: true, owner: true }],
+];
+
+for (const [name, choice] of cases) {
+  test(`new application, pending: ${name}`, async () => {
+    const { backend, handler } = setup({ profiles: sharing(choice) });
+    assert.equal((await call(handler, event('INSERT', application()))).status, 200);
+
+    // The owner is always told; the volunteer's address is included only if they chose to share it.
+    const [toOwner, ...extra] = emailTo(backend, 'owner@example.test');
+    assert.equal(extra.length, 0);
+    assert.equal(toOwner.html.includes(VOLUNTEER_CONTACT), choice.volunteer);
+    assert.equal(toOwner.reply_to, choice.volunteer ? VOLUNTEER_CONTACT : undefined);
+    assert.equal(toOwner.html.includes("hasn't shared a contact email"), !choice.volunteer);
+
+    // The volunteer hears from this function only when the organization shared an address.
+    const toVolunteer = emailTo(backend, 'volunteer@example.test');
+    assert.equal(toVolunteer.length, choice.owner ? 1 : 0);
+    if (choice.owner) {
+      assert.ok(toVolunteer[0].html.includes(OWNER_CONTACT));
+      assert.equal(toVolunteer[0].reply_to, OWNER_CONTACT);
+    }
+    assert.deepEqual(leakedLogins(backend), []);
+  });
+
+  test(`approval: ${name}`, async () => {
+    const { backend, handler } = setup({ app: application({ status: 'approved' }), profiles: sharing(choice) });
+    assert.equal((await call(handler, event('UPDATE', application({ status: 'approved' }), application()))).status, 200);
+
+    // Approving works and both people are notified whatever they chose to share.
+    assert.deepEqual(recipients(backend), LOGIN_ADDRESSES.slice().sort());
+    const toVolunteer = emailTo(backend, 'volunteer@example.test')[0];
+    const toOwner = emailTo(backend, 'owner@example.test')[0];
+
+    // Each message carries the other person's shared address only if they shared one.
+    assert.equal(toVolunteer.html.includes(OWNER_CONTACT), choice.owner);
+    assert.equal(toVolunteer.reply_to, choice.owner ? OWNER_CONTACT : undefined);
+    assert.equal(toOwner.html.includes(VOLUNTEER_CONTACT), choice.volunteer);
+    assert.equal(toOwner.reply_to, choice.volunteer ? VOLUNTEER_CONTACT : undefined);
+    assert.deepEqual(leakedLogins(backend), []);
+  });
+}
+
+test('sharing without a profile row means nothing is shared', async () => {
+  const { backend, handler } = setup({ app: application({ status: 'approved' }), profiles: [] });
+  await call(handler, event('UPDATE', application({ status: 'approved' }), application()));
+  assert.equal(backend.emails.length, 2);
+  assert.deepEqual(leakedLogins(backend), []);
+  assert.ok(backend.emails.every(email => email.reply_to === undefined));
+});
+
+test('an address with sharing turned off stays hidden', async () => {
+  const { backend, handler } = setup({ app: application({ status: 'approved' }), profiles: sharing({ volunteer: false, owner: false }) });
+  await call(handler, event('UPDATE', application({ status: 'approved' }), application()));
+  const everything = JSON.stringify(backend.emails);
+  assert.ok(!everything.includes(VOLUNTEER_CONTACT));
+  assert.ok(!everything.includes(OWNER_CONTACT));
+});
+
+test('sharing turned on with a blank address shares nothing, not the login email', async () => {
+  const { backend, handler } = setup({
+    app: application({ status: 'approved' }),
+    profiles: [profile(VOLUNTEER_ID, '   ', true), profile(OWNER_ID, null, true)],
+  });
+  await call(handler, event('UPDATE', application({ status: 'approved' }), application()));
+  assert.equal(backend.emails.length, 2);
+  assert.deepEqual(leakedLogins(backend), []);
+  assert.ok(backend.emails.every(email => email.reply_to === undefined));
+});
+
+test('a changed address is the one used, and a cleared address is no longer shared', async () => {
+  // Shared when the person applied...
+  const first = setup({ profiles: sharing({ volunteer: true }) });
+  await call(first.handler, event('INSERT', application()));
+  assert.ok(emailTo(first.backend, 'owner@example.test')[0].html.includes(VOLUNTEER_CONTACT));
+
+  // ...then they change it before the approval...
+  const changed = setup({ app: application({ status: 'approved' }), profiles: [profile(VOLUNTEER_ID, 'changed@example.test', true), profile(OWNER_ID, null, false)] });
+  await call(changed.handler, event('UPDATE', application({ status: 'approved' }), application()));
+  const toOwner = emailTo(changed.backend, 'owner@example.test')[0];
+  assert.ok(toOwner.html.includes('changed@example.test'));
+  assert.ok(!toOwner.html.includes(VOLUNTEER_CONTACT));
+
+  // ...or clear it, and nothing is shared.
+  const cleared = setup({ app: application({ status: 'approved' }), profiles: [profile(VOLUNTEER_ID, null, false), profile(OWNER_ID, null, false)] });
+  await call(cleared.handler, event('UPDATE', application({ status: 'approved' }), application()));
+  const clearedText = JSON.stringify(cleared.backend.emails);
+  for (const gone of [VOLUNTEER_CONTACT, 'changed@example.test']) assert.ok(!clearedText.includes(gone), `${gone} must not be shared`);
+  assert.deepEqual(leakedLogins(cleared.backend), []);
+});
+
+test('a shared address is only ever shown, never used as the place a notification is delivered', async () => {
+  const { backend, handler } = setup({ app: application({ status: 'approved' }), profiles: sharing({ volunteer: true, owner: true }) });
+  await call(handler, event('UPDATE', application({ status: 'approved' }), application()));
+  assert.deepEqual(recipients(backend), LOGIN_ADDRESSES.slice().sort());
+});
+
+test('an applicant-supplied address on the application is neither delivered to nor shared', async () => {
+  const stored = application({ status: 'approved', applicant_email: ATTACKER });
+  const { backend, handler } = setup({ app: stored, profiles: sharing({ volunteer: true, owner: true }) });
+  await call(handler, event('UPDATE', stored, application()));
+  assert.ok(!JSON.stringify(backend.emails).includes(ATTACKER));
+  assert.deepEqual(recipients(backend), LOGIN_ADDRESSES.slice().sort());
+});
+
+test('a failed profile lookup sends nothing and releases the claim, so a retry still works', async () => {
+  const { backend, handler } = setup({ app: application({ status: 'approved' }), profiles: sharing(), backend: { tableFailures: ['profiles'] } });
+  const response = await call(handler, event('UPDATE', application({ status: 'approved' }), application()));
+  assert.equal(response.status, 500);
+  assert.equal(backend.emails.length, 0);
+  assert.equal(backend.rows('applications')[0].match_emailed_at, null);
+});
+
+test('a failed new-application notification still releases its claim when sharing is involved', async () => {
+  const { backend, handler } = setup({ profiles: sharing({ volunteer: true, owner: true }), backend: { emailFailures: [0] } });
+  assert.equal((await call(handler, event('INSERT', application()))).status, 500);
+  assert.equal(backend.rows('applications')[0].poster_notified_at, null);
+  assert.equal((await call(handler, event('INSERT', application()))).status, 200);
+});
+
+test('repeating a new-application event does not repeat either notification', async () => {
+  const { backend, handler } = setup({ profiles: sharing({ volunteer: true, owner: true }) });
+  await call(handler, event('INSERT', application()));
+  await call(handler, event('INSERT', application()));
+  assert.equal(backend.emails.length, 2); // one to the owner, one to the volunteer
 });

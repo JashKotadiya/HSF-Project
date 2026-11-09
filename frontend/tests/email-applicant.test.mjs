@@ -190,6 +190,37 @@ test('an error from a failed send is cleared by the next successful send', async
   assert.deepEqual(draft(ui), { subject: '', message: '' });
 });
 
+test('after a send the poster is told when the applicant cannot reply by email', async t => {
+  const ui = await setupForm(t, () => json({ ok: true, reply_enabled: false }));
+  await open(ui);
+  await write(ui, 'Hello', 'Hello there');
+  await ui.click('Send');
+  await ui.settle();
+  assert.ok(ui.text().includes('Email sent.'));
+  assert.ok(ui.text().includes("can't reply by email"));
+  assert.ok(ui.text().includes('Contact sharing'));
+});
+
+test('no reply warning is shown when a contact email is shared', async t => {
+  const ui = await setupForm(t, () => json({ ok: true, reply_enabled: true }));
+  await open(ui);
+  await write(ui, 'Hello', 'Hello there');
+  await ui.click('Send');
+  await ui.settle();
+  assert.ok(ui.text().includes('Email sent.'));
+  assert.ok(!ui.text().includes("can't reply by email"));
+});
+
+test('an older function response with no reply information shows no warning', async t => {
+  const ui = await setupForm(t, () => json({ ok: true }));
+  await open(ui);
+  await write(ui, 'Hello', 'Hello there');
+  await ui.click('Send');
+  await ui.settle();
+  assert.ok(!ui.text().includes("can't reply by email"));
+});
+
+
 // The form as the applicant page renders it, next to the decision buttons.
 const application = { id: 'application-1', project_id: 'project-1', volunteer_id: 'volunteer-1', status: 'pending', applicant_name: 'Review Volunteer', created_at: '2026-01-01T00:00:00Z' };
 async function setupPage(t, respondToEmail = () => json({ ok: true })) {
