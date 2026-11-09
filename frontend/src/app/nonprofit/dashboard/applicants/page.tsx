@@ -34,6 +34,8 @@ function ApplicantsDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
+  const [sharedContacts, setSharedContacts] =
+    useState<Record<string, string | null>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [projectFilter, setProjectFilter] = useState(searchParams.get("project") ?? "all");
   const [statusFilter, setStatusFilter] = useState<ApplicationStatus | "all">("pending");
@@ -59,11 +61,34 @@ function ApplicantsDashboard() {
       if (projectList.length > 0) {
         const { data: apps, error: appsError } = await supabase
           .from("applications")
-          .select("*")
+          .select("id, project_id, volunteer_id, status, created_at, resume_path, answers, applicant_name, viewed_at")
           .in("project_id", projectList.map((p) => p.id))
           .order("created_at", { ascending: false });
         if (appsError) setError(`${appsError.message}. ${SETUP_HINT}`);
-        setApplications((apps ?? []) as Application[]);
+        const rows = (apps ?? []) as Application[];
+        setApplications(rows);
+
+        const contacts = await Promise.all(
+          rows.map(async (app) => {
+            const { data, error: contactError } =
+              await supabase.rpc("get_application_contact_email", {
+                p_application_id: String(app.id),
+              });
+
+            if (contactError) {
+              console.error("Contact lookup failed:", contactError.message);
+            }
+
+            const email =
+              !contactError && Array.isArray(data)
+                ? (data[0]?.contact_email ?? null)
+                : null;
+
+            return [app.id, email] as const;
+          })
+        );
+
+        setSharedContacts(Object.fromEntries(contacts));
       }
       setLoading(false);
     };
@@ -84,7 +109,6 @@ function ApplicantsDashboard() {
       (statusFilter === "all" || a.status === statusFilter) &&
       (!term ||
         (a.applicant_name ?? "").toLowerCase().includes(term) ||
-        (a.applicant_email ?? "").toLowerCase().includes(term) ||
         (projectTitles.get(a.project_id) ?? "").toLowerCase().includes(term))
   );
   const selected = applications.find((a) => a.id === selectedId) ?? null;
@@ -104,7 +128,7 @@ function ApplicantsDashboard() {
 
   const updateStatus = async (app: Application, status: ApplicationStatus) => {
     if (updatingRef.current || app.status === status) return;
-    const applicantName = app.applicant_name || app.applicant_email || "this volunteer";
+    const applicantName = app.applicant_name || "this volunteer";
     const projectTitle = projectTitles.get(app.project_id) ?? "this project";
     if (status === "approved" && !window.confirm(`Approve ${applicantName} for "${projectTitle}"?`)) return;
 
@@ -216,7 +240,7 @@ function ApplicantsDashboard() {
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search by name, email, or project..."
+                placeholder="Search by name or project..."
                 className="mb-4 w-full rounded-md border border-[#CBD5E1] bg-white px-3 py-2 text-sm text-[#0F172A] outline-none transition focus:border-[#114160] focus:ring-1 focus:ring-[#114160]"
               />
               <ul className="-mx-2 space-y-1">
@@ -238,7 +262,7 @@ function ApplicantsDashboard() {
                     >
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-sm font-semibold text-[#092130] line-clamp-1">
-                          {app.applicant_name || app.applicant_email || "Volunteer"}
+                          {app.applicant_name|| "Volunteer"}
                         </p>
                         <StatusBadge status={app.status} />
                       </div>
@@ -267,7 +291,7 @@ function ApplicantsDashboard() {
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="flex items-center gap-4">
                       <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#D3E6F2] text-xl font-bold text-[#114160]">
-                        {(selected.applicant_name || selected.applicant_email || "V").charAt(0).toUpperCase()}
+                        {(selected.applicant_name || "V").charAt(0).toUpperCase()}
                       </div>
                       <div>
                         <h2 className="text-2xl font-bold text-[#092130]">
@@ -276,11 +300,25 @@ function ApplicantsDashboard() {
                         <p className="text-sm font-semibold text-[#114160]">
                           {projectTitles.get(selected.project_id) ?? "Project"}
                         </p>
-                        {selected.applicant_email && (
-                          <a href={`mailto:${selected.applicant_email}`} className="text-sm text-[#64748B] hover:underline">
-                            {selected.applicant_email}
-                          </a>
-                        )}
+                        <div className="mt-2 space-y-2">
+                          {sharedContacts[selected.id] ? (
+                            <>
+                              <p className="break-all text-sm text-[#475569]">
+                                {sharedContacts[selected.id]}
+                              </p>
+                              <a
+                                href={`mailto:${sharedContacts[selected.id]}`}
+                                className="inline-flex rounded-md bg-[#114160] px-3 py-2 text-sm font-semibold text-white hover:bg-[#092130]"
+                              >
+                                Email contact
+                              </a>
+                            </>
+                          ) : (
+                            <p className="text-sm text-[#64748B]">
+                              Contact email not shared
+                            </p>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <div className="text-right">
