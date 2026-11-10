@@ -12,7 +12,7 @@ async function submit(t, mode) {
   const ui = mount(async (input, init = {}) => {
     const url = new URL(input);
     const method = init.method || 'GET';
-    calls.push({ path: url.pathname, method });
+    calls.push({ path: url.pathname, method, body: init.body });
     if (url.pathname === '/rest/v1/applications' && method === 'GET') {
       applicationReads++;
       return json(mode === 'duplicate' && applicationReads > 1 ? { status: 'pending' } : []);
@@ -40,10 +40,20 @@ async function submit(t, mode) {
   t.after(() => ui.dispose());
   await ui.settle();
   ui.fill();
+  const formText = ui.text();
   await ui.submit();
   await ui.settle();
   const count = (prefix, method) => calls.filter(call => call.path.startsWith(prefix) && call.method === method).length;
-  return { ui, projectReads, uploads: count('/storage/', 'POST'), inserts: count('/rest/v1/applications', 'POST'), removals: count('/storage/', 'DELETE') };
+  const insert = calls.find(call => call.path === '/rest/v1/applications' && call.method === 'POST');
+  return {
+    ui,
+    projectReads,
+    uploads: count('/storage/', 'POST'),
+    inserts: count('/rest/v1/applications', 'POST'),
+    removals: count('/storage/', 'DELETE'),
+    formText,
+    saved: insert ? JSON.parse(insert.body) : null,
+  };
 }
 
 test('an Active project accepts a normal submission', async t => {
@@ -52,6 +62,15 @@ test('an Active project accepts a normal submission', async t => {
   assert.equal(result.uploads, 1);
   assert.equal(result.inserts, 1);
   assert.equal(result.removals, 0);
+});
+
+test('the application never stores the applicant\'s login email, and says it stays private', async t => {
+  const result = await submit(t, 'success');
+  assert.ok(result.saved, 'the application was saved');
+  assert.ok(!('applicant_email' in result.saved));
+  assert.ok(!JSON.stringify(result.saved).includes('volunteer@example.test'));
+  assert.match(result.formText, /Account email/);
+  assert.match(result.formText, /not shown to the organization/);
 });
 
 test('an already closed project is rejected before uploading a resume', async t => {
