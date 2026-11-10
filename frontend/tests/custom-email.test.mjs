@@ -44,7 +44,7 @@ const send = (handler, body = { application_id: APP_ID, subject: 'A question', m
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: method === 'POST' ? JSON.stringify(body) : undefined,
   }));
-const sharing = (contact_email, share_contact) => [{ id: OWNER_ID, contact_email, share_contact }];
+const sharing = (contact_email, share_contact_email) => [{ id: OWNER_ID, contact_email, share_contact_email }];
 
 // ---- Who may send ------------------------------------------------------------
 

@@ -58,12 +58,12 @@ async function accountEmail(userId: string) {
 async function sharedContact(userId: string): Promise<string | null> {
   const { data, error } = await supabase
     .from("profiles")
-    .select("contact_email, share_contact")
+    .select("contact_email, share_contact_email")
     .eq("id", userId)
     .maybeSingle();
   if (error) throw error;
   const email = data?.contact_email?.trim();
-  return data?.share_contact === true && email ? email : null;
+  return data?.share_contact_email === true && email ? email : null;
 }
 
 Deno.serve(async (req) => {
