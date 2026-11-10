@@ -43,14 +43,19 @@ export function loadFunction(name, { env, fetch }) {
 // In-memory stand-in for the three services the functions talk to over HTTP:
 // the database REST API, the Auth admin API, and the email provider. It records
 // every request, so tests can also prove that something was NOT contacted.
-export function createBackend({ tables = {}, users = {}, sessions = {}, emailFailures = [], authFailures = [], tableFailures = [], beforeRequest, onChange } = {}) {
+
+// What identifies a row, for inserts that must not create a duplicate.
+const PRIMARY_KEYS = { email_deliveries: ['application_id', 'kind'] };
+
+export function createBackend({ tables = {}, users = {}, sessions = {}, emailFailures = [], failEmailsTo = new Set(), authFailures = [], tableFailures = [], beforeRequest, onChange } = {}) {
   const rows = Object.fromEntries(Object.entries(tables).map(([name, list]) => [name, structuredClone(list)]));
   const requests = [], emails = [], writes = [];
   let emailAttempts = 0;
 
   const matches = (row, searchParams) => [...searchParams].every(([key, value]) => {
-    if (['select', 'order', 'limit', 'offset', 'columns'].includes(key)) return true;
+    if (['select', 'order', 'limit', 'offset', 'columns', 'on_conflict'].includes(key)) return true;
     if (value.startsWith('eq.')) return String(row[key]) === value.slice(3);
+    if (value.startsWith('lt.')) return row[key] != null && String(row[key]) < value.slice(3);
     if (value === 'is.null') return row[key] == null;
     throw new Error(`Unsupported filter in test backend: ${key}=${value}`);
   });
@@ -69,7 +74,7 @@ export function createBackend({ tables = {}, users = {}, sessions = {}, emailFai
 
     if (url.hostname === 'api.resend.com') {
       const attempt = emailAttempts++;
-      if (emailFailures.includes(attempt)) return jsonResponse({ message: 'provider down' }, 500);
+      if (emailFailures.includes(attempt) || failEmailsTo.has(body.to)) return jsonResponse({ message: 'provider down' }, 500);
       emails.push({ ...body, headers });
       return jsonResponse({ id: `email-${emails.length}` });
     }
@@ -89,7 +94,8 @@ export function createBackend({ tables = {}, users = {}, sessions = {}, emailFai
     }
 
     const table = url.pathname.match(/^\/rest\/v1\/([^/]+)$/)?.[1];
-    if (table && tableFailures.includes(table)) return jsonResponse({ message: `${table} unavailable` }, 500);
+    // A table can fail for every request ('email_deliveries') or for one kind ('DELETE email_deliveries').
+    if (table && (tableFailures.includes(table) || tableFailures.includes(`${method} ${table}`))) return jsonResponse({ message: `${table} unavailable` }, 500);
     if (table && rows[table]) {
       const found = rows[table].filter(row => matches(row, url.searchParams));
       const select = url.searchParams.get('select');
@@ -101,16 +107,35 @@ export function createBackend({ tables = {}, users = {}, sessions = {}, emailFai
         }
         return jsonResponse(found.map(row => pick(row, select)));
       }
+      const wantsRows = headers.get('Prefer')?.includes('return=representation');
       if (method === 'PATCH') {
         found.forEach(row => {
           const before = { ...row };
           Object.assign(row, body);
           onChange?.({ table, old: before, record: { ...row } });
         });
-        writes.push({ table, filters: Object.fromEntries(url.searchParams), body, matched: found.length });
-        return headers.get('Prefer')?.includes('return=representation')
-          ? jsonResponse(found.map(row => pick(row, select)))
-          : new Response(null, { status: 204 });
+        writes.push({ table, method, filters: Object.fromEntries(url.searchParams), body, matched: found.length });
+        return wantsRows ? jsonResponse(found.map(row => pick(row, select))) : new Response(null, { status: 204 });
+      }
+      if (method === 'DELETE') {
+        rows[table] = rows[table].filter(row => !found.includes(row));
+        writes.push({ table, method, filters: Object.fromEntries(url.searchParams), body: null, matched: found.length });
+        return wantsRows ? jsonResponse(found.map(row => pick(row, select))) : new Response(null, { status: 204 });
+      }
+      if (method === 'POST') {
+        const keys = PRIMARY_KEYS[table] ?? ['id'];
+        const ignoreDuplicates = headers.get('Prefer')?.includes('resolution=ignore-duplicates');
+        const inserted = [];
+        for (const item of Array.isArray(body) ? body : [body]) {
+          const exists = rows[table].some(row => keys.every(key => String(row[key]) === String(item[key])));
+          if (exists && !ignoreDuplicates) return jsonResponse({ code: '23505', message: 'duplicate key value violates unique constraint' }, 409);
+          if (exists) continue;
+          const row = { sent_at: null, ...item };
+          rows[table].push(row);
+          inserted.push(row);
+        }
+        writes.push({ table, method, filters: {}, body, matched: inserted.length });
+        return wantsRows ? jsonResponse(inserted.map(row => pick(row, select)), 201) : new Response(null, { status: 201 });
       }
     }
     throw new Error(`Unexpected request in test backend: ${method} ${url}`);

@@ -21,7 +21,7 @@ const otherProject = { id: OTHER_PROJECT_ID, title: 'Unrelated project', user_id
 const application = (overrides = {}) => ({
   id: APP_ID, project_id: PROJECT_ID, volunteer_id: VOLUNTEER_ID, status: 'pending',
   applicant_name: 'Real Volunteer', applicant_email: 'volunteer@example.test',
-  match_emailed_at: null, poster_notified_at: null, ...overrides,
+  ...overrides,
 });
 
 const baseEnv = {
@@ -33,9 +33,9 @@ const baseEnv = {
   MATCH_WEBHOOK_SECRET: SECRET,
 };
 
-function setup({ env = {}, app = application(), profiles = [], backend: backendOptions = {} } = {}) {
+function setup({ env = {}, app = application(), profiles = [], deliveries = [], backend: backendOptions = {} } = {}) {
   const backend = createBackend({
-    tables: { applications: app ? [app] : [], posts: [project, otherProject], profiles },
+    tables: { applications: app ? [app] : [], posts: [project, otherProject], profiles, email_deliveries: deliveries },
     users,
     ...backendOptions,
   });
@@ -51,6 +51,10 @@ const call = (handler, payload, { headers = { 'x-webhook-secret': SECRET }, meth
     body: method === 'GET' ? undefined : raw ?? JSON.stringify(payload),
   }));
 const recipients = backend => backend.emails.map(email => email.to).sort();
+// Delivery tracking: one row per email per application, with sent_at set once it has gone out.
+const delivery = (backend, kind) => backend.rows('email_deliveries').find(row => row.application_id === APP_ID && row.kind === kind);
+const sentKinds = backend => backend.rows('email_deliveries').filter(row => row.sent_at).map(row => row.kind).sort();
+const noDeliveryRows = backend => assert.equal(backend.rows('email_deliveries').length, 0, 'no claim may be left behind');
 const nothingHappened = backend => {
   assert.equal(backend.emails.length, 0, 'no email may be sent');
   assert.equal(backend.writes.length, 0, 'nothing may be written');
@@ -139,18 +143,18 @@ test('an UPDATE event claiming approval for a still-pending application sends no
   const forged = application({ status: 'approved', applicant_email: ATTACKER });
   await call(handler, event('UPDATE', forged, application({ status: 'pending' })));
   nothingHappened(backend);
-  assert.equal(backend.rows('applications')[0].match_emailed_at, null);
+  noDeliveryRows(backend);
   assert.equal(backend.rows('applications')[0].status, 'pending');
 });
 
-test('an approval that is reversed before the delivery claim sends nothing', async () => {
-  // The application is approved when the function loads it, then rejected before it records delivery.
+test('an approval that is reversed after the claim but before sending sends nothing and leaves no claim', async () => {
+  // The application is approved when the function loads it, then rejected just as it claims the email.
   let reversed = false;
   const { backend, handler } = setup({
     app: application({ status: 'approved' }),
     backend: {
-      beforeRequest: ({ method, rows }) => {
-        if (method === 'PATCH' && !reversed) {
+      beforeRequest: ({ method, url, rows }) => {
+        if (method === 'POST' && url.pathname.endsWith('/email_deliveries') && !reversed) {
           reversed = true;
           rows.applications[0].status = 'rejected';
         }
@@ -160,7 +164,7 @@ test('an approval that is reversed before the delivery claim sends nothing', asy
   await call(handler, event('UPDATE', application({ status: 'approved' }), application()));
   assert.ok(reversed);
   assert.equal(backend.emails.length, 0);
-  assert.equal(backend.rows('applications')[0].match_emailed_at, null);
+  noDeliveryRows(backend);
 });
 
 test('a rejected application never produces approval emails', async () => {
@@ -228,11 +232,11 @@ test('a real new application notifies the project owner once, with a link to rev
   const [email] = backend.emails;
   assert.equal(email.to, 'owner@example.test');
   assert.equal(email.subject, 'New applicant for Community website');
-    assert.equal(email.reply_to, undefined);
+  assert.equal(email.reply_to, undefined);
   assert.ok(!email.html.includes('volunteer@example.test'));
   assert.ok(email.html.includes("hasn't shared a contact email"));
   assert.ok(email.html.includes(`https://hsf.example.test/nonprofit/dashboard/applicants?project=${PROJECT_ID}`));
-  assert.ok(backend.rows('applications')[0].poster_notified_at);
+  assert.ok(delivery(backend, 'new_application_organization')?.sent_at);
 });
 
 test('a real approval emails both parties and records that it was sent', async () => {
@@ -246,7 +250,7 @@ test('a real approval emails both parties and records that it was sent', async (
   assert.ok(!toOwner.html.includes('volunteer@example.test'));
   assert.ok(toVolunteer.html.includes("hasn't shared a contact email"));
   assert.ok(toOwner.html.includes("hasn't shared a contact email"));
-  assert.ok(backend.rows('applications')[0].match_emailed_at);
+  assert.deepEqual(sentKinds(backend), ['match_organization', 'match_volunteer']);
 });
 
 test('updates that are not approvals (such as a first view) send nothing', async () => {
@@ -287,65 +291,51 @@ test('simultaneous duplicate approval events still send only one pair of emails'
   assert.equal(backend.emails.length, 2);
 });
 
-test('an email provider failure reports an error, releases the claim, and a retry then succeeds', async () => {
+test('an email provider failure reports an error, and a retry sends only the email that did not go out', async () => {
+  // The first email (to the volunteer) fails; the organization's email still goes out.
   const { backend, handler } = setup({ app: application({ status: 'approved' }), backend: { emailFailures: [0] } });
   const payload = event('UPDATE', application({ status: 'approved' }), application());
-  const failed = await call(handler, payload);
-  assert.equal(failed.status, 500);
-  assert.equal(backend.emails.length, 0);
-  assert.equal(backend.rows('applications')[0].match_emailed_at, null);
+  assert.equal((await call(handler, payload)).status, 500);
+  assert.deepEqual(recipients(backend), ['owner@example.test']);
+  assert.deepEqual(sentKinds(backend), ['match_organization']);
+  assert.equal(delivery(backend, 'match_volunteer'), undefined, 'the failed email keeps no claim');
 
   const retried = await call(handler, payload);
   assert.equal(retried.status, 200);
-  assert.equal(backend.emails.length, 2);
-  assert.ok(backend.rows('applications')[0].match_emailed_at);
+  assert.deepEqual(recipients(backend), ['owner@example.test', 'volunteer@example.test']);
+  assert.deepEqual(sentKinds(backend), ['match_organization', 'match_volunteer']);
 });
 
 test('a failed new-application notification can be retried', async () => {
   const { backend, handler } = setup({ backend: { emailFailures: [0] } });
   assert.equal((await call(handler, event('INSERT', application()))).status, 500);
-  assert.equal(backend.rows('applications')[0].poster_notified_at, null);
+  noDeliveryRows(backend);
   assert.equal((await call(handler, event('INSERT', application()))).status, 200);
   assert.equal(backend.emails.length, 1);
+  assert.deepEqual(sentKinds(backend), ['new_application_organization']);
 });
 
-// The function updates the application itself (to record delivery), and the database
-// webhook reports those updates back to the function as new UPDATE events.
-async function deliverOwnWrites(handler, events, rounds = 8) {
-  for (let round = 0; round < rounds && events.length; round++) {
-    for (const own of events.splice(0)) await call(handler, own);
+test('delivery tracking never writes to the applications table, so it cannot echo back as new events', async () => {
+  for (const emailFailures of [[], [0, 1]]) {
+    const { backend, handler } = setup({ app: application({ status: 'approved' }), backend: { emailFailures } });
+    await call(handler, event('UPDATE', application({ status: 'approved' }), application()));
+    assert.deepEqual(backend.writes.filter(write => write.table === 'applications'), []);
   }
-}
-
-test('the function\'s own delivery bookkeeping does not set off another delivery after a failed send', async () => {
-  const events = [];
-  const { backend, handler } = setup({
-    app: application({ status: 'approved' }),
-    backend: {
-      emailFailures: Array.from({ length: 50 }, (_, attempt) => attempt),
-      onChange: ({ old, record }) => events.push(event('UPDATE', record, old)),
-    },
-  });
-  const approval = event('UPDATE', application({ status: 'approved' }), application());
-  assert.equal((await call(handler, approval)).status, 500);
-  await deliverOwnWrites(handler, events);
-  assert.equal(backend.emailAttempts(), 1, 'one failed attempt, not a loop of retries');
-  assert.equal(backend.rows('applications')[0].match_emailed_at, null);
 });
 
 test('updates to an application that was already approved do not send approval emails again', async () => {
   const { backend, handler } = setup({ app: application({ status: 'approved' }) });
-  const bookkeeping = event('UPDATE', application({ status: 'approved', poster_notified_at: '2026-01-01T00:00:00Z' }), application({ status: 'approved' }));
-  assert.equal((await call(handler, bookkeeping)).status, 200);
+  const update = event('UPDATE', application({ status: 'approved', viewed_at: '2026-01-01T00:00:00Z' }), application({ status: 'approved' }));
+  assert.equal((await call(handler, update)).status, 200);
   nothingHappened(backend);
 });
 
-test('an account lookup failure sends nothing, reports an error, and releases the claim', async () => {
+test('an account lookup failure sends nothing, reports an error, and leaves no claim behind', async () => {
   const { backend, handler } = setup({ app: application({ status: 'approved' }), backend: { authFailures: [VOLUNTEER_ID] } });
   const response = await call(handler, event('UPDATE', application({ status: 'approved' }), application()));
   assert.equal(response.status, 500);
   assert.equal(backend.emails.length, 0);
-  assert.equal(backend.rows('applications')[0].match_emailed_at, null);
+  noDeliveryRows(backend);
 });
 
 test('error responses do not reveal internal details', async () => {
@@ -357,7 +347,6 @@ test('error responses do not reveal internal details', async () => {
   assert.ok(!text.includes('test-service-key'));
 });
 
-
 // ---- Optional contact sharing -------------------------------------------------
 // Login emails are used only to deliver notifications. What a person chooses to share
 // is a separate address, and nothing is passed on unless they turned sharing on.
@@ -365,7 +354,7 @@ test('error responses do not reveal internal details', async () => {
 const VOLUNTEER_CONTACT = 'volunteer.contact@example.test';
 const OWNER_CONTACT = 'owner.contact@example.test';
 const LOGIN_ADDRESSES = ['owner@example.test', 'volunteer@example.test'];
-const profile = (id, contact_email, share_contact) => ({ id, contact_email, share_contact });
+const profile = (id, contact_email, share_contact_email) => ({ id, contact_email, share_contact_email });
 const sharing = ({ volunteer = false, owner = false } = {}) => [
   profile(VOLUNTEER_ID, VOLUNTEER_CONTACT, volunteer),
   profile(OWNER_ID, OWNER_CONTACT, owner),
@@ -484,19 +473,22 @@ test('an applicant-supplied address on the application is neither delivered to n
   assert.deepEqual(recipients(backend), LOGIN_ADDRESSES.slice().sort());
 });
 
-test('a failed profile lookup sends nothing and releases the claim, so a retry still works', async () => {
+test('a failed profile lookup sends nothing and leaves no claim, so a retry still works', async () => {
   const { backend, handler } = setup({ app: application({ status: 'approved' }), profiles: sharing(), backend: { tableFailures: ['profiles'] } });
   const response = await call(handler, event('UPDATE', application({ status: 'approved' }), application()));
   assert.equal(response.status, 500);
   assert.equal(backend.emails.length, 0);
-  assert.equal(backend.rows('applications')[0].match_emailed_at, null);
+  noDeliveryRows(backend);
 });
 
-test('a failed new-application notification still releases its claim when sharing is involved', async () => {
+test('a failed new-application notification, with sharing involved, is retried without repeating the one that went out', async () => {
+  // The organization's email (first) fails; the volunteer's contact email (second) goes out.
   const { backend, handler } = setup({ profiles: sharing({ volunteer: true, owner: true }), backend: { emailFailures: [0] } });
-  assert.equal((await call(handler, event('INSERT', application()))).status, 500);
-  assert.equal(backend.rows('applications')[0].poster_notified_at, null);
-  assert.equal((await call(handler, event('INSERT', application()))).status, 200);
+  const insert = event('INSERT', application());
+  assert.equal((await call(handler, insert)).status, 500);
+  assert.deepEqual(recipients(backend), ['volunteer@example.test']);
+  assert.equal((await call(handler, insert)).status, 200);
+  assert.deepEqual(recipients(backend), ['owner@example.test', 'volunteer@example.test']);
 });
 
 test('repeating a new-application event does not repeat either notification', async () => {
@@ -504,4 +496,205 @@ test('repeating a new-application event does not repeat either notification', as
   await call(handler, event('INSERT', application()));
   await call(handler, event('INSERT', application()));
   assert.equal(backend.emails.length, 2); // one to the owner, one to the volunteer
+});
+
+
+
+// ---- Delivery tracking (issue #72) ---------------------------------------------
+// Every email is tracked on its own, so a failure, a retry or a repeated event can
+// neither skip a notification nor send one twice.
+
+const minutesAgo = minutes => new Date(Date.now() - minutes * 60 * 1000).toISOString();
+const claim = (kind, { claimedMinutesAgo = 0, sent = false } = {}) => ({
+  application_id: APP_ID, kind, claimed_at: minutesAgo(claimedMinutesAgo), sent_at: sent ? minutesAgo(claimedMinutesAgo) : null,
+});
+const approval = () => event('UPDATE', application({ status: 'approved' }), application());
+const approvedSetup = (options = {}) => setup({ app: application({ status: 'approved' }), ...options });
+const sentTo = (backend, address) => emailTo(backend, address).length;
+
+test('a database error while claiming an email is reported as an error, never as "already sent"', async () => {
+  for (const [name, options, payload] of [
+    ['approval', { backend: { tableFailures: ['email_deliveries'] } }, approval()],
+    ['new application', { app: application(), backend: { tableFailures: ['email_deliveries'] } }, event('INSERT', application())],
+  ]) {
+    const { backend, handler } = name === 'approval' ? approvedSetup(options) : setup(options);
+    const response = await call(handler, payload);
+    assert.equal(response.status, 500, name);
+    assert.ok(!(await response.text()).includes('already'), name);
+    assert.equal(backend.emails.length, 0, name);
+  }
+});
+
+test('a database error while taking over a stale claim is also reported as an error', async () => {
+  const { backend, handler } = approvedSetup({
+    deliveries: [claim('match_volunteer', { claimedMinutesAgo: 30 }), claim('match_organization', { claimedMinutesAgo: 30 })],
+    backend: { tableFailures: ['PATCH email_deliveries'] },
+  });
+  const response = await call(handler, approval());
+  assert.equal(response.status, 500);
+  assert.ok(!(await response.text()).includes('already'));
+  assert.equal(backend.emails.length, 0);
+});
+
+test('when the volunteer email goes out and the organization email fails, a retry sends only the organization email', async () => {
+  const failEmailsTo = new Set(['owner@example.test']);
+  const { backend, handler } = approvedSetup({ backend: { failEmailsTo } });
+  assert.equal((await call(handler, approval())).status, 500);
+  assert.equal(sentTo(backend, 'volunteer@example.test'), 1);
+  assert.deepEqual(sentKinds(backend), ['match_volunteer']);
+  assert.equal(delivery(backend, 'match_organization'), undefined);
+
+  failEmailsTo.delete('owner@example.test'); // delivery recovers
+  assert.equal((await call(handler, approval())).status, 200);
+  assert.equal(sentTo(backend, 'volunteer@example.test'), 1, 'the volunteer is not emailed again');
+  assert.equal(sentTo(backend, 'owner@example.test'), 1);
+  assert.deepEqual(sentKinds(backend), ['match_organization', 'match_volunteer']);
+});
+
+test('when the organization email goes out and the volunteer email fails, a retry sends only the volunteer email', async () => {
+  const failEmailsTo = new Set(['volunteer@example.test']);
+  const { backend, handler } = approvedSetup({ backend: { failEmailsTo } });
+  assert.equal((await call(handler, approval())).status, 500);
+  assert.equal(sentTo(backend, 'owner@example.test'), 1);
+  failEmailsTo.clear();
+  assert.equal((await call(handler, approval())).status, 200);
+  assert.equal(sentTo(backend, 'owner@example.test'), 1, 'the organization is not emailed again');
+  assert.equal(sentTo(backend, 'volunteer@example.test'), 1);
+});
+
+test('when both emails fail nothing is claimed, and a retry sends each one once', async () => {
+  const failEmailsTo = new Set(LOGIN_ADDRESSES);
+  const { backend, handler } = approvedSetup({ backend: { failEmailsTo } });
+  assert.equal((await call(handler, approval())).status, 500);
+  assert.equal(backend.emails.length, 0);
+  noDeliveryRows(backend);
+  failEmailsTo.clear();
+  assert.equal((await call(handler, approval())).status, 200);
+  assert.deepEqual(recipients(backend), LOGIN_ADDRESSES.slice().sort());
+});
+
+test('several failed retries still end with each email sent exactly once', async () => {
+  const failEmailsTo = new Set(['owner@example.test']);
+  const { backend, handler } = approvedSetup({ backend: { failEmailsTo } });
+  for (let attempt = 0; attempt < 3; attempt++) assert.equal((await call(handler, approval())).status, 500);
+  assert.equal(sentTo(backend, 'volunteer@example.test'), 1);
+  failEmailsTo.clear();
+  assert.equal((await call(handler, approval())).status, 200);
+  assert.equal(sentTo(backend, 'volunteer@example.test'), 1);
+  assert.equal(sentTo(backend, 'owner@example.test'), 1);
+});
+
+test('a new-application notification that half failed is retried without repeating the half that went out', async () => {
+  const failEmailsTo = new Set(['volunteer@example.test']);
+  const { backend, handler } = setup({ profiles: sharing({ volunteer: true, owner: true }), backend: { failEmailsTo } });
+  const insert = event('INSERT', application());
+  assert.equal((await call(handler, insert)).status, 500);
+  assert.equal(sentTo(backend, 'owner@example.test'), 1);
+  failEmailsTo.clear();
+  assert.equal((await call(handler, insert)).status, 200);
+  assert.equal(sentTo(backend, 'owner@example.test'), 1, 'the organization is not notified again');
+  assert.equal(sentTo(backend, 'volunteer@example.test'), 1);
+});
+
+test('replaying events after everything was delivered sends nothing', async () => {
+  const { backend, handler } = approvedSetup({ profiles: sharing({ volunteer: true, owner: true }) });
+  await call(handler, event('INSERT', application()));
+  await call(handler, approval());
+  const total = backend.emails.length;
+  assert.equal(total, 4); // two when applying, two when approved
+  for (let replay = 0; replay < 3; replay++) {
+    assert.equal((await call(handler, event('INSERT', application()))).status, 200);
+    assert.equal((await call(handler, approval())).status, 200);
+  }
+  assert.equal(backend.emails.length, total);
+});
+
+test('the new-application and approval emails are tracked independently of each other', async () => {
+  const { backend, handler } = approvedSetup();
+  await call(handler, event('INSERT', application()));
+  assert.deepEqual(sentKinds(backend), ['new_application_organization']);
+  await call(handler, approval());
+  assert.deepEqual(sentKinds(backend), ['match_organization', 'match_volunteer', 'new_application_organization']);
+});
+
+test('an email with nothing to send leaves no claim behind', async () => {
+  const { backend, handler } = setup({ profiles: sharing({ volunteer: true, owner: false }) });
+  await call(handler, event('INSERT', application()));
+  assert.deepEqual(backend.rows('email_deliveries').map(row => row.kind), ['new_application_organization']);
+});
+
+test('simultaneous events send each email once, even when one of them is failing', async () => {
+  const failEmailsTo = new Set(['owner@example.test']);
+  const { backend, handler } = approvedSetup({ backend: { failEmailsTo } });
+  await Promise.all([call(handler, approval()), call(handler, approval()), call(handler, approval())]);
+  assert.equal(sentTo(backend, 'volunteer@example.test'), 1);
+  failEmailsTo.clear();
+  await Promise.all([call(handler, approval()), call(handler, approval())]);
+  assert.equal(sentTo(backend, 'volunteer@example.test'), 1);
+  assert.equal(sentTo(backend, 'owner@example.test'), 1);
+});
+
+test('deliveries recorded by the older single-flag tracking are not sent again', async () => {
+  const { backend, handler } = approvedSetup({
+    deliveries: [claim('match_volunteer', { claimedMinutesAgo: 600, sent: true }), claim('match_organization', { claimedMinutesAgo: 600, sent: true })],
+  });
+  assert.equal((await call(handler, approval())).status, 200);
+  assert.equal(backend.emails.length, 0);
+});
+
+// A claim that was never completed (the function stopped mid-send) is not lost for good,
+// but it is also not taken from a request that may still be sending.
+
+test('a stale unfinished claim is taken over and delivered', async () => {
+  const { backend, handler } = approvedSetup({ deliveries: [claim('match_volunteer', { claimedMinutesAgo: 30 })] });
+  assert.equal((await call(handler, approval())).status, 200);
+  assert.equal(sentTo(backend, 'volunteer@example.test'), 1);
+  assert.deepEqual(sentKinds(backend), ['match_organization', 'match_volunteer']);
+});
+
+test('a recent claim is left alone, so an email that may be in flight is not sent twice', async () => {
+  const { backend, handler } = approvedSetup({ deliveries: [claim('match_volunteer', { claimedMinutesAgo: 1 })] });
+  assert.equal((await call(handler, approval())).status, 200);
+  assert.equal(sentTo(backend, 'volunteer@example.test'), 0);
+  assert.equal(sentTo(backend, 'owner@example.test'), 1);
+  assert.equal(delivery(backend, 'match_volunteer').sent_at, null);
+});
+
+test('an old claim that was completed is never taken over', async () => {
+  const { backend, handler } = approvedSetup({ deliveries: [claim('match_volunteer', { claimedMinutesAgo: 600, sent: true })] });
+  await call(handler, approval());
+  assert.equal(sentTo(backend, 'volunteer@example.test'), 0);
+});
+
+test('if giving up a claim fails after a failed send, the email is not repeated but becomes retryable once the claim expires', async () => {
+  const failEmailsTo = new Set(['volunteer@example.test']);
+  const { backend, handler } = approvedSetup({ backend: { failEmailsTo, tableFailures: ['DELETE email_deliveries'] } });
+  assert.equal((await call(handler, approval())).status, 500);
+  const stuck = delivery(backend, 'match_volunteer');
+  assert.ok(stuck && stuck.sent_at === null, 'the unfinished claim is still recorded');
+
+  failEmailsTo.clear();
+  await call(handler, approval()); // too soon: the claim could still belong to a live request
+  assert.equal(sentTo(backend, 'volunteer@example.test'), 0);
+
+  stuck.claimed_at = minutesAgo(30); // the claim expires
+  assert.equal((await call(handler, approval())).status, 200);
+  assert.equal(sentTo(backend, 'volunteer@example.test'), 1);
+});
+
+test('if recording a sent email fails, the email is reported as an error but is never sent again', async () => {
+  const { backend, handler } = approvedSetup({ backend: { tableFailures: ['PATCH email_deliveries'] } });
+  assert.equal((await call(handler, approval())).status, 500);
+  assert.deepEqual(recipients(backend), LOGIN_ADDRESSES.slice().sort());
+  const before = backend.emails.length;
+  await call(handler, approval());
+  assert.equal(backend.emails.length, before, 'the unfinished claims are respected');
+});
+
+test('a failure of only the claim insert is still an error, not "already sent"', async () => {
+  const { backend, handler } = approvedSetup({ backend: { tableFailures: ['POST email_deliveries'] } });
+  const response = await call(handler, approval());
+  assert.equal(response.status, 500);
+  assert.ok(!(await response.text()).includes('already'));
+  assert.equal(backend.emails.length, 0);
 });
