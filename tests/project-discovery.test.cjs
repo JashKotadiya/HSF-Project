@@ -131,3 +131,63 @@ test('interest setup preserves profiles, preferences and legacy projects across 
   await asUser(db, owner, () => db.query(`update public.posts set cause = 'New Local Cause' where id = 'draft'`));
   assert.equal((await db.query(`select name from public.cause_categories where name = 'New Local Cause'`)).rows.length, 1);
 });
+
+
+const categoryNames = async db => (await db.query('select name from public.cause_categories order by name collate "C"')).rows.map(row => row.name);
+const insertPost = (db, id, cause, status = 'Active') =>
+  db.query(`insert into public.posts values ($1, '${owner}', 'Project', '', $2, $3, '[]', now(), '', '')`, [id, status, cause]);
+
+test('categories that differ only by letter case are one category for projects and for saved interests', async t => {
+  const db = await fixture(t);
+  const before = await categoryNames(db);
+  await asUser(db, owner, async () => {
+    await insertPost(db, 'lower', 'education');
+    await insertPost(db, 'upper', 'ENVIRONMENT');
+    await insertPost(db, 'spaced', '  human services  ');
+  });
+  assert.deepEqual(await categoryNames(db), before, 'no duplicate categories were added');
+  // The projects keep exactly what their owners typed.
+  const causes = (await db.query(`select id, cause from public.posts where id in ('lower', 'upper', 'spaced') order by id`)).rows;
+  assert.deepEqual(causes, [{ id: 'lower', cause: 'education' }, { id: 'spaced', cause: '  human services  ' }, { id: 'upper', cause: 'ENVIRONMENT' }]);
+  // A genuinely new cause is still registered, once, whatever its case.
+  await asUser(db, owner, async () => {
+    await insertPost(db, 'new-1', 'Wildlife Rescue');
+    await insertPost(db, 'new-2', 'wildlife rescue');
+  });
+  assert.equal((await categoryNames(db)).filter(name => name.toLowerCase() === 'wildlife rescue').length, 1);
+
+  await asUser(db, volunteer, async () => {
+    const saved = await db.query(`select cause from public.save_my_interests(array['education', 'ENVIRONMENT', 'Education', ' environment '])`);
+    assert.deepEqual(saved.rows, [{ cause: 'Education' }, { cause: 'Environment' }], 'saved under the standard spelling, once each');
+    await assert.rejects(db.query(`select * from public.save_my_interests(array['Not a category'])`), error => error.code === '23503');
+  });
+});
+
+test('categories cannot be created twice with different letter case', async t => {
+  const db = await fixture(t);
+  await assert.rejects(db.query(`insert into public.cause_categories values ('EDUCATION')`), error => error.code === '23505');
+});
+
+test('setup merges categories that already differ only by case, moving saved interests and keeping projects', async t => {
+  const db = await fixture(t);
+  // Recreate a database set up by the earlier version of interests.sql, which allowed duplicates.
+  await db.exec(`
+    drop index public.cause_categories_name_lower_key;
+    insert into public.cause_categories values ('education'), ('EDUCATION'), ('wildlife'), ('Wildlife');
+    insert into public.posts values ('old-lower', '${owner}', 'Old', '', 'Active', 'education', '[]', now(), '', '');
+    insert into public.volunteer_interests values
+      ('${volunteer}', 'education'), ('${volunteer}', 'EDUCATION'),
+      ('${other}', 'Education'), ('${other}', 'wildlife');
+  `);
+  await db.exec(sql('interests.sql'));
+  await db.exec(sql('interests.sql'));
+
+  const names = await categoryNames(db);
+  assert.equal(names.filter(name => name.toLowerCase() === 'education').length, 1);
+  assert.ok(names.includes('Education'), 'the standard spelling is kept');
+  assert.ok(names.includes('Wildlife') && !names.includes('wildlife'), 'otherwise the first spelling alphabetically is kept');
+  assert.deepEqual((await db.query(`select cause from public.volunteer_interests where volunteer_id = '${volunteer}' order by cause`)).rows, [{ cause: 'Education' }]);
+  assert.deepEqual((await db.query(`select cause from public.volunteer_interests where volunteer_id = '${other}' order by cause`)).rows, [{ cause: 'Education' }, { cause: 'Wildlife' }]);
+  assert.equal((await db.query(`select cause from public.posts where id = 'old-lower'`)).rows[0].cause, 'education');
+  await assert.rejects(db.query(`insert into public.cause_categories values ('EDUCATION')`), error => error.code === '23505');
+});

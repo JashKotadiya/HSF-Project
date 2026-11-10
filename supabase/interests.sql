@@ -11,8 +11,14 @@ insert into public.cause_categories (name) values
 on conflict do nothing;
 
 -- Keep existing project categories available without rewriting project data.
+-- Spellings that differ only by letter case count as one category ("education" is
+-- "Education"), because search already treats them as the same cause.
 insert into public.cause_categories (name)
-select distinct trim(cause) from public.posts where nullif(trim(cause), '') is not null
+select distinct on (lower(trim(p.cause))) trim(p.cause)
+from public.posts p
+where nullif(trim(p.cause), '') is not null
+  and not exists (select 1 from public.cause_categories c where lower(c.name) = lower(trim(p.cause)))
+order by lower(trim(p.cause)), trim(p.cause) collate "C"
 on conflict do nothing;
 
 -- Existing project forms accept free-text causes. Register new values so those
@@ -41,6 +47,39 @@ create table if not exists public.volunteer_interests (
   cause text not null references public.cause_categories(name),
   primary key (volunteer_id, cause)
 );
+
+-- Databases set up by an earlier version of this script may already hold categories that
+-- differ only by case. Merge each group into one spelling (the standard category if there
+-- is one, otherwise the first in alphabetical order), moving volunteers' saved interests
+-- with it. Projects keep their own cause text untouched. Does nothing when there are none.
+create temporary table cause_category_merge on commit drop as
+select name,
+  first_value(name) over (
+    partition by lower(name)
+    order by (name in ('Education', 'Environment', 'Health', 'Human Services',
+                       'Arts & Culture', 'Animal Welfare', 'Community Development')) desc,
+             name collate "C"
+  ) as keep
+from public.cause_categories;
+
+insert into public.volunteer_interests (volunteer_id, cause)
+select distinct vi.volunteer_id, m.keep
+from public.volunteer_interests vi
+join cause_category_merge m on m.name = vi.cause
+where m.name <> m.keep
+on conflict do nothing;
+
+delete from public.volunteer_interests vi
+using cause_category_merge m
+where vi.cause = m.name and m.name <> m.keep;
+
+delete from public.cause_categories c
+using cause_category_merge m
+where c.name = m.name and m.name <> m.keep;
+
+create unique index if not exists cause_categories_name_lower_key
+  on public.cause_categories (lower(name));
+
 alter table public.volunteer_interests enable row level security;
 drop policy if exists volunteer_interests_own on public.volunteer_interests;
 create policy volunteer_interests_own on public.volunteer_interests
@@ -69,9 +108,12 @@ begin
     raise exception 'A volunteer account is required' using errcode = '42501';
   end if;
   delete from public.volunteer_interests where volunteer_id = (select auth.uid());
+  -- Letter case does not matter ("education" is saved as "Education"). Anything that
+  -- matches no category is kept as typed, so the foreign key rejects it.
   insert into public.volunteer_interests (volunteer_id, cause)
-  select (select auth.uid()), selected.cause
-  from (select distinct trim(value) as cause from unnest(coalesce(p_causes, '{}'::text[])) value) selected;
+  select distinct (select auth.uid()), coalesce(c.name, selected.cause)
+  from (select distinct trim(value) as cause from unnest(coalesce(p_causes, '{}'::text[])) value) selected
+  left join public.cause_categories c on lower(c.name) = lower(selected.cause);
   return query select * from public.volunteer_interests where volunteer_id = (select auth.uid()) order by cause;
 end;
 $$;
