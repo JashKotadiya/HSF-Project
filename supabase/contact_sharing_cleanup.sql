@@ -1,12 +1,13 @@
--- Run in Supabase → SQL Editor, AFTER supabase/contact_email_preferences.sql and AFTER every
--- function that emails volunteers finds them through their account instead of
--- applications.applicant_email (send-match-emails and send-custom-email already do;
--- send-status-email must be updated first, or its emails will stop).
+-- Run in Supabase → SQL Editor ONLY AFTER:
+--   1) contact_email_preferences.sql has been applied
+--   2) send-status-email, send-match-emails, and send-custom-email are deployed
+--      and resolve volunteers through auth.admin.getUserById
 --
--- applications.applicant_email held each applicant's login email, and it was shown
--- to the project owner without the applicant's choice. This stops that: existing
--- values are cleared and the column can no longer be filled in. The column itself is
--- kept so older code that still names it keeps working; it is always empty.
+-- applications.applicant_email held each applicant's login email and was shown
+-- to the project owner without the applicant's choice. This clears existing
+-- values, keeps future writes empty, and stops authenticated clients from
+-- reading the column. The column itself remains so older code that still names
+-- it keeps working.
 -- Safe to re-run.
 
 begin;
@@ -30,5 +31,30 @@ drop trigger if exists applications_clear_applicant_email on public.applications
 create trigger applications_clear_applicant_email
   before insert or update on public.applications
   for each row execute function public.clear_applicant_email();
+
+-- Prevent authenticated frontend clients from reading historical applicant_email values.
+-- Keep the other application fields readable under their existing RLS policies.
+revoke select on table public.applications
+from public, anon, authenticated;
+
+do $$
+declare
+  allowed_columns text;
+begin
+  select string_agg(format('%I', column_name), ', ')
+  into allowed_columns
+  from information_schema.columns
+  where table_schema = 'public'
+    and table_name = 'applications'
+    and column_name <> 'applicant_email';
+
+  if allowed_columns is not null then
+    execute format(
+      'grant select (%s) on public.applications to authenticated',
+      allowed_columns
+    );
+  end if;
+end;
+$$;
 
 commit;

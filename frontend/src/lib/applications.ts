@@ -10,6 +10,7 @@ export interface Application {
   resume_path?: string | null;
   answers?: { q: string; a: string }[] | null;
   applicant_name?: string | null;
+  /** Cleared and private. Notifications use the account email; shared contacts use profiles.contact_email. */
   applicant_email?: string | null;
 }
 
