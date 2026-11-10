@@ -7,6 +7,7 @@ import supabase from "@/lib/supabase";
 import { useAuth } from "@/components/auth/AuthProvider";
 import PageHeader from "@/components/layout/PageHeader";
 import StatusBadge from "@/components/applications/StatusBadge";
+import EmailApplicantForm from "@/components/applications/EmailApplicantForm";
 import {
   Application,
   ApplicationStatus,
@@ -424,6 +425,8 @@ function ApplicantsDashboard() {
                       Download Resume
                     </button>
                   </div>
+
+                  <EmailApplicantForm key={selected.id} applicationId={selected.id} />
                 </div>
               )}
             </section>
