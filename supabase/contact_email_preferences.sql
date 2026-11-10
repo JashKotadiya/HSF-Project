@@ -1,6 +1,7 @@
-
 -- Optional contact email sharing for HSF.
 -- Sharing is off unless explicitly enabled.
+-- Login emails stay private. Do not clear applications.applicant_email here;
+-- status emails still use that column until send-status-email reads the account.
 
 alter table public.profiles
   add column if not exists contact_email text;
@@ -14,6 +15,12 @@ update public.profiles
 set contact_email = null
 where contact_email is not null
   and btrim(contact_email) = '';
+
+-- A blank address cannot stay marked as shared.
+update public.profiles
+set share_contact_email = false
+where contact_email is null
+  and share_contact_email = true;
 
 -- Validate optional contact addresses.
 do $$
@@ -40,7 +47,7 @@ $$;
 
 -- Secure contact lookup for one application.
 -- The caller must be the applicant or project owner.
--- A pending application is eligible for contact sharing.
+-- Sharing is available only while the application is pending or approved.
 -- Login emails are never used as fallback values.
 
 create or replace function
@@ -68,7 +75,7 @@ as $$
 
   from public.applications a
   join public.posts p
-    on p.id = a.project_id
+    on p.id::text = a.project_id::text
 
   left join public.profiles vol
     on vol.id = a.volunteer_id
@@ -78,6 +85,7 @@ as $$
 
   where a.id::text = p_application_id
     and (select auth.uid()) is not null
+    and a.status in ('pending', 'approved')
     and (
       a.volunteer_id = (select auth.uid())
       or p.user_id = (select auth.uid())
@@ -95,32 +103,3 @@ from public, anon, authenticated;
 grant execute on function
   public.get_application_contact_email(text)
 to authenticated;
-
--- Prevent authenticated frontend clients from
--- reading historical applicant_email values.
---
--- Keep the other application fields readable under
--- their existing row-level security policies.
-
-revoke select on table public.applications
-from public, anon, authenticated;
-
-do $$
-declare
-  allowed_columns text;
-begin
-  select string_agg(format('%I', column_name), ', ')
-  into allowed_columns
-  from information_schema.columns
-  where table_schema = 'public'
-    and table_name = 'applications'
-    and column_name <> 'applicant_email';
-
-  if allowed_columns is not null then
-    execute format(
-      'grant select (%s) on public.applications to authenticated',
-      allowed_columns
-    );
-  end if;
-end;
-$$;

@@ -51,6 +51,7 @@ export default function VolunteerProjectsPage() {
         : { data: [] };
 
       const byId = new Map((projects ?? []).map((p) => [p.id, p]));
+      let contactErrorMessage: string | null = null;
       const contactEntries = await Promise.all(
         (apps ?? []).map(async (app) => {
           const { data, error: contactError } =
@@ -59,13 +60,13 @@ export default function VolunteerProjectsPage() {
             });
 
           if (contactError) {
-            console.error("Contact lookup failed:", contactError.message);
+            contactErrorMessage = contactError.message;
+            return [app.id, null] as const;
           }
 
-          const email =
-            !contactError && Array.isArray(data)
-              ? (data[0]?.contact_email ?? null)
-              : null;
+          const email = Array.isArray(data)
+            ? (data[0]?.contact_email ?? null)
+            : null;
 
           return [app.id, email] as const;
         })
@@ -80,6 +81,9 @@ export default function VolunteerProjectsPage() {
           sharedContactEmail: contacts.get(a.id) ?? null,
         }))
       );
+      if (contactErrorMessage) {
+        setError(`Couldn't load shared contact emails: ${contactErrorMessage}`);
+      }
       setLoading(false);
     };
     void load();

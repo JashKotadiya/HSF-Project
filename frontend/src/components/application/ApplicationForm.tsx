@@ -71,6 +71,7 @@ export default function ApplicationForm({
 }) {
   const { user } = useAuth();
   const userId = user?.id ?? null;
+  const email = user?.email ?? "";
   const [fullName, setFullName] = useState("");
   const [answers, setAnswers] = useState<string[]>(APPLICATION_QUESTIONS.map(() => ""));
   const [resume, setResume] = useState<File | null>(null);
@@ -153,21 +154,15 @@ export default function ApplicationForm({
 
       const resumePath = await uploadResume(userId, projectId, resume);
 
-
-const { error: insertError } = await supabase
-  .from("applications")
-  .insert({
-    project_id: projectId,
-    volunteer_id: userId,
-    status: "pending",
-    resume_path: resumePath,
-    applicant_name: fullName.trim(),
-    answers: APPLICATION_QUESTIONS.map((q, i) => ({
-      q,
-      a: answers[i].trim(),
-    })),
-  });
-
+      const { error: insertError } = await supabase.from("applications").insert({
+        project_id: projectId,
+        volunteer_id: userId,
+        status: "pending",
+        resume_path: resumePath,
+        applicant_name: fullName.trim(),
+        applicant_email: email,
+        answers: APPLICATION_QUESTIONS.map((q, i) => ({ q, a: answers[i].trim() })),
+      });
       if (insertError) {
         // Don't leave an orphaned resume behind for an application that wasn't saved.
         await supabase.storage.from(RESUME_BUCKET).remove([resumePath]);
@@ -268,6 +263,10 @@ const { error: insertError } = await supabase
                 placeholder="Jane Doe"
                 className={inputClass}
               />
+            </div>
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-[#092130]">Email</label>
+              <input type="email" value={email} disabled className={`${inputClass} bg-[#F8FAFC] text-[#64748B]`} />
             </div>
           </div>
 
