@@ -126,83 +126,210 @@ async function loadContext(app: Application) {
   };
 }
 
-// A volunteer applied: tell the poster, once. The volunteer's address is included only
-// if they chose to share one. If the organization shared a contact address, the
-// volunteer is told it too, so sharing works in both directions while pending.
-async function notifyNewApplicant(app: Application) {
-  const { data: claimed, error } = await supabase
-    .from("applications")
-    .update({ poster_notified_at: new Date().toISOString() })
-    .eq("id", app.id)
-    .is("poster_notified_at", null)
-    .select("id");
-  if (error) throw error;
-  if (!claimed?.length) return reply("already notified");
+type Delivery =
+  | "new_application_organization"
+  | "new_application_volunteer"
+  | "match_volunteer"
+  | "match_organization";
 
-  try {
-    const c = await loadContext(app);
-    const link = `${SITE_URL}/nonprofit/dashboard/applicants?project=${c.post.id}`;
-    await sendEmail(
-      c.nonprofitEmail,
-      `New applicant for ${c.post.title}`,
-      `<p><b>${c.volName}</b> applied to <b>${c.project}</b>.</p>
-       ${contactLine("The volunteer", c.volunteerContact)}
-       <p><a href="${esc(link)}">Review the application</a></p>`,
-      c.volunteerContact ?? undefined,
-    );
-    if (c.nonprofitContact) {
-      await sendEmail(
-        c.volunteerEmail,
-        `Contact for your application to ${c.post.title}`,
-        `<p>${c.orgName} shared a contact email for your application to <b>${c.project}</b>.</p>
-         ${contactLine("The organization", c.nonprofitContact)}`,
-        c.nonprofitContact,
-      );
-    }
-    return reply("notified");
-  } catch (err) {
-    // Release the claim so a retry can try again.
-    await supabase.from("applications").update({ poster_notified_at: null }).eq("id", app.id);
-    throw err;
+// A claim that was never completed (the function crashed or timed out mid-send) can be
+// taken over after this long, so a notification is not lost for good.
+const CLAIM_LEASE_MS = 5 * 60 * 1000;
+
+// Claims one email for one application. Returns true only if this request may send it:
+// no row exists yet (the new row is the claim), or an earlier claim was never completed
+// and has gone stale. A database error is thrown, never read as "already sent".
+async function claimDelivery(applicationId: string, kind: Delivery) {
+  const now = new Date();
+  const { data: inserted, error } = await supabase
+    .from("email_deliveries")
+    .upsert(
+      { application_id: applicationId, kind, claimed_at: now.toISOString() },
+      { onConflict: "application_id,kind", ignoreDuplicates: true },
+    )
+    .select("kind");
+  if (error) throw error;
+  if (inserted?.length) return true;
+
+  const staleBefore = new Date(now.getTime() - CLAIM_LEASE_MS).toISOString();
+  const { data: takenOver, error: takeoverError } = await supabase
+    .from("email_deliveries")
+    .update({ claimed_at: now.toISOString() })
+    .eq("application_id", applicationId)
+    .eq("kind", kind)
+    .is("sent_at", null)
+    .lt("claimed_at", staleBefore)
+    .select("kind");
+  if (takeoverError) throw takeoverError;
+  return Boolean(takenOver?.length);
+}
+
+// Gives up a claim after a failed send so a retry can send it. If this fails too, the
+// claim simply expires and can be taken over (see CLAIM_LEASE_MS).
+async function releaseDelivery(applicationId: string, kind: Delivery) {
+  const { error } = await supabase
+    .from("email_deliveries")
+    .delete()
+    .eq("application_id", applicationId)
+    .eq("kind", kind)
+    .is("sent_at", null);
+  if (error) console.error(`Could not release the ${kind} claim; it can be retried once the claim expires`, error);
+}
+
+// Marks a sent email as sent. Tried twice, because the email is already out by now.
+async function recordSent(applicationId: string, kind: Delivery) {
+  for (let attempt = 1; ; attempt++) {
+    const { error } = await supabase
+      .from("email_deliveries")
+      .update({ sent_at: new Date().toISOString() })
+      .eq("application_id", applicationId)
+      .eq("kind", kind);
+    if (!error) return;
+    if (attempt === 2) throw error;
   }
 }
 
-// An application was approved: tell both people, once, and pass along whichever contact
-// address each has chosen to share. The claim only succeeds if the stored status is
-// "approved", so an event cannot make us announce an approval that never happened.
-async function sendMatch(app: Application) {
-  const { data: claimed, error } = await supabase
-    .from("applications")
-    .update({ match_emailed_at: new Date().toISOString() })
-    .eq("id", app.id)
-    .eq("status", "approved")
-    .is("match_emailed_at", null)
-    .select("id");
-  if (error) throw error;
-  if (!claimed?.length) return reply("already sent");
+// Sends one email at most once. `send` returns true if it sent something, or false if
+// there turned out to be nothing to send. `stillValid` is checked after the claim, just
+// before sending.
+async function deliverOnce(
+  applicationId: string,
+  kind: Delivery,
+  send: () => Promise<boolean>,
+  stillValid: () => Promise<boolean> = async () => true,
+) {
+  if (!(await claimDelivery(applicationId, kind))) return false;
 
+  let delivered: boolean;
   try {
-    const c = await loadContext(app);
-    await sendEmail(
-      c.volunteerEmail,
-      `You're matched: ${c.post.title}`,
-      `<p>Great news! ${c.orgName} approved your application for <b>${c.project}</b>.</p>
-       ${contactLine("The organization", c.nonprofitContact)}`,
-      c.nonprofitContact ?? undefined,
-    );
-    await sendEmail(
-      c.nonprofitEmail,
-      `Match confirmed: ${c.post.title}`,
-      `<p>You approved ${c.volName} for <b>${c.project}</b>.</p>
-       ${contactLine("The volunteer", c.volunteerContact)}`,
-      c.volunteerContact ?? undefined,
-    );
-    return reply("sent");
+    delivered = (await stillValid()) && (await send());
   } catch (err) {
-    // Release the claim so a retry or re-approval can try again.
-    await supabase.from("applications").update({ match_emailed_at: null }).eq("id", app.id);
+    await releaseDelivery(applicationId, kind);
     throw err;
   }
+  if (!delivered) {
+    await releaseDelivery(applicationId, kind);
+    return false;
+  }
+  // The email is out: from here the claim is never released, so it cannot be sent twice.
+  await recordSent(applicationId, kind);
+  return true;
+}
+
+type Step = { kind: Delivery; send: () => Promise<boolean> };
+
+// Runs each email on its own: one failing does not stop the others, and one that was
+// already delivered is skipped. After every email has been tried, the first failure (if
+// any) is thrown so the caller sees that something still needs a retry.
+async function runDeliveries(
+  applicationId: string,
+  steps: Step[],
+  stillValid?: () => Promise<boolean>,
+) {
+  let sent = 0;
+  const failures: unknown[] = [];
+  for (const step of steps) {
+    try {
+      if (await deliverOnce(applicationId, step.kind, step.send, stillValid)) sent++;
+    } catch (err) {
+      console.error(`${step.kind} was not delivered`, err);
+      failures.push(err);
+    }
+  }
+  if (failures.length) throw failures[0];
+  return sent;
+}
+
+// Loads something once, only when first needed. A failed load is not remembered.
+function lazy<T>(load: () => Promise<T>) {
+  let value: T | undefined;
+  return async () => (value ??= await load());
+}
+
+// A volunteer applied: tell the organization. The volunteer's address is included only
+// if they chose to share one. If the organization shared a contact address, the
+// volunteer is told it too, so sharing works in both directions while pending.
+async function notifyNewApplicant(app: Application) {
+  const context = lazy(() => loadContext(app));
+  const sent = await runDeliveries(app.id, [
+    {
+      kind: "new_application_organization",
+      send: async () => {
+        const c = await context();
+        const link = `${SITE_URL}/nonprofit/dashboard/applicants?project=${c.post.id}`;
+        await sendEmail(
+          c.nonprofitEmail,
+          `New applicant for ${c.post.title}`,
+          `<p><b>${c.volName}</b> applied to <b>${c.project}</b>.</p>
+           ${contactLine("The volunteer", c.volunteerContact)}
+           <p><a href="${esc(link)}">Review the application</a></p>`,
+          c.volunteerContact ?? undefined,
+        );
+        return true;
+      },
+    },
+    {
+      kind: "new_application_volunteer",
+      send: async () => {
+        const c = await context();
+        if (!c.nonprofitContact) return false; // nothing shared, so nothing to send
+        await sendEmail(
+          c.volunteerEmail,
+          `Contact for your application to ${c.post.title}`,
+          `<p>${c.orgName} shared a contact email for your application to <b>${c.project}</b>.</p>
+           ${contactLine("The organization", c.nonprofitContact)}`,
+          c.nonprofitContact,
+        );
+        return true;
+      },
+    },
+  ]);
+  return reply(sent > 0 ? "notified" : "already notified");
+}
+
+// An application was approved: tell both people, once each, and pass along whichever
+// contact address each has chosen to share. Each email is tracked separately, so a
+// retry sends only the one that is still missing. Before sending, the stored status is
+// checked again, so an event cannot make us announce an approval that is not (or no
+// longer) real.
+async function sendMatch(app: Application) {
+  const context = lazy(() => loadContext(app));
+  const stillApproved = async () => (await loadApplication(app.id))?.status === "approved";
+  const sent = await runDeliveries(
+    app.id,
+    [
+      {
+        kind: "match_volunteer",
+        send: async () => {
+          const c = await context();
+          await sendEmail(
+            c.volunteerEmail,
+            `You're matched: ${c.post.title}`,
+            `<p>Great news! ${c.orgName} approved your application for <b>${c.project}</b>.</p>
+             ${contactLine("The organization", c.nonprofitContact)}`,
+            c.nonprofitContact ?? undefined,
+          );
+          return true;
+        },
+      },
+      {
+        kind: "match_organization",
+        send: async () => {
+          const c = await context();
+          await sendEmail(
+            c.nonprofitEmail,
+            `Match confirmed: ${c.post.title}`,
+            `<p>You approved ${c.volName} for <b>${c.project}</b>.</p>
+             ${contactLine("The volunteer", c.volunteerContact)}`,
+            c.volunteerContact ?? undefined,
+          );
+          return true;
+        },
+      },
+    ],
+    stillApproved,
+  );
+  return reply(sent > 0 ? "sent" : "already sent");
 }
 
 Deno.serve(async (req) => {

@@ -6,19 +6,22 @@ import supabase from "@/lib/supabase";
 
 export default function EmailApplicantForm({ applicationId }: { applicationId: string }) {
   const [open, setOpen] = useState(false);
-  const [subject, setSubject] = useState("");
-  const [message, setMessage] = useState("");
+  // Subject and message are kept together so a send can tell whether the draft changed.
+  const [draft, setDraft] = useState({ subject: "", message: "" });
+  const { subject, message } = draft;
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
   const [replyEnabled, setReplyEnabled] = useState(true);
 
   const send = async () => {
+    // The text this request carries. Anything typed after this point is a newer draft.
+    const submitted = { subject, message };
     setSending(true);
     setError(null);
     setSent(false);
     const { data, error: invokeError } = await supabase.functions.invoke("send-custom-email", {
-      body: { application_id: applicationId, subject, message },
+      body: { application_id: applicationId, subject: submitted.subject, message: submitted.message },
     });
     setSending(false);
 
@@ -37,8 +40,13 @@ export default function EmailApplicantForm({ applicationId }: { applicationId: s
     }
     setSent(true);
     setReplyEnabled(data?.reply_enabled !== false);
-    setSubject("");
-    setMessage("");
+    // Clear the draft only if it is still exactly what was sent. If it was edited while
+    // the request was pending, keep it: those edits were never part of the sent message.
+    setDraft((current) =>
+      current.subject === submitted.subject && current.message === submitted.message
+        ? { subject: "", message: "" }
+        : current,
+    );
   };
 
   if (!open) {
@@ -64,14 +72,20 @@ export default function EmailApplicantForm({ applicationId }: { applicationId: s
       <input
         type="text"
         value={subject}
-        onChange={(e) => setSubject(e.target.value)}
+        onChange={(e) => {
+          const value = e.target.value;
+          setDraft((current) => ({ ...current, subject: value }));
+        }}
         maxLength={150}
         placeholder="Subject"
         className={inputClass}
       />
       <textarea
         value={message}
-        onChange={(e) => setMessage(e.target.value)}
+        onChange={(e) => {
+          const value = e.target.value;
+          setDraft((current) => ({ ...current, message: value }));
+        }}
         maxLength={3000}
         rows={5}
         placeholder="Write your message. If you share a contact email, replies go to it."
