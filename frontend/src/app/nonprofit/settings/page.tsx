@@ -337,7 +337,7 @@ export default function NonprofitSettingsPage() {
             <label htmlFor="organization-name" className="mb-2 block text-sm font-semibold text-[#092130]">
               Organization Name *
             </label>
-            <input id="organization-name" className={inputClass} value={settings.organization_name} onChange={(event) => updateField("organization_name", event.target.value)} placeholder="Enter your organization's name" required maxLength={150} disabled={saving || !!error && loadedUserId !== userId}/>
+            <input id="organization-name" className={inputClass} value={settings.organization_name} onChange={(event) => updateField("organization_name", event.target.value)} placeholder="Enter your organization's name" required maxLength={150} disabled={saving || loadedUserId !== userId}/>
           </div>
           <div>
             <label htmlFor="mission-statement" className="mb-2 block text-sm font-semibold text-[#092130]">
@@ -358,7 +358,7 @@ export default function NonprofitSettingsPage() {
             <Link href="/nonprofit/dashboard" className="rounded-md border border-[#CBD5E1] bg-white px-5 py-3 text-sm font-semibold text-[#092130] transition hover:bg-[#F1F5F9]">
               Back to Dashboard
             </Link>
-            <button type="submit" disabled={saving || !hasChanges || !!error && loadedUserId !== userId} className="rounded-md bg-[#114160] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#092130] disabled:cursor-not-allowed disabled:opacity-60">
+            <button type="submit" disabled={saving || !hasChanges || loadedUserId !== userId} className="rounded-md bg-[#114160] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#092130] disabled:cursor-not-allowed disabled:opacity-60">
               {saving ? "Saving..." : "Save Changes"}
             </button>
           </div>
