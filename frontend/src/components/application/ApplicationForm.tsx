@@ -140,6 +140,18 @@ export default function ApplicationForm({
     setIsSubmitting(true);
 
     try {
+      const { data: openProject, error: projectError } = await supabase
+        .from("posts")
+        .select("id")
+        .eq("id", projectId)
+        .eq("status", "Active")
+        .maybeSingle();
+      if (projectError) throw projectError;
+      if (!openProject) {
+        setErrors(["This project is no longer accepting applications."]);
+        return;
+      }
+
       const resumePath = await uploadResume(userId, projectId, resume);
 
       const { error: insertError } = await supabase.from("applications").insert({
@@ -158,14 +170,32 @@ export default function ApplicationForm({
           setExistingStatus((await fetchExistingStatus()) ?? "pending");
           return;
         }
+        if (insertError.code === "42501") {
+          // The project may have closed during upload, but other permission
+          // failures must not be reported as a closed project.
+          const { data: stillOpen, error: statusError } = await supabase
+            .from("posts")
+            .select("id")
+            .eq("id", projectId)
+            .eq("status", "Active")
+            .maybeSingle();
+          if (!statusError && !stillOpen) {
+            setErrors(["This project is no longer accepting applications."]);
+            return;
+          }
+        }
         throw insertError;
       }
 
       setSubmitted(true);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String((err as { message?: string })?.message ?? err);
-      const looksLikeSetup = /bucket|row-level security|column|schema cache|policy/i.test(message);
-      setErrors([looksLikeSetup ? `${message}. ${SETUP_HINT}` : message || "Something went wrong while submitting your application."]);
+      const looksLikeSetup = /bucket|column|schema cache/i.test(message);
+      setErrors([
+        looksLikeSetup
+          ? `${message}. ${SETUP_HINT}`
+          : message || "Something went wrong while submitting your application.",
+      ]);
     } finally {
       setIsSubmitting(false);
     }

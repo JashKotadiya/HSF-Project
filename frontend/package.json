@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:auth": "node --test tests/auth-login.test.mjs tests/auth-portal.test.mjs",
+    "test:applications": "node --test tests/project-status.test.mjs tests/applicant-decisions.test.mjs tests/project-discovery.test.mjs tests/interest-preferences.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.1",
