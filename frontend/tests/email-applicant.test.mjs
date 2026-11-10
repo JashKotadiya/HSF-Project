@@ -220,6 +220,125 @@ test('an older function response with no reply information shows no warning', as
   assert.ok(!ui.text().includes("can't reply by email"));
 });
 
+// ---- Edits made while a message is sending ---------------------------------------
+// Only the text that was actually sent may be cleared. Anything typed after Send was
+// clicked was never part of the request, so it must survive a successful send.
+
+// Starts a send that stays pending until the returned `finish` is called.
+async function startPendingSend(t, { subject = 'Hello', message = 'Hello there', respond } = {}) {
+  const pending = deferred();
+  const ui = await setupForm(t, request => (respond ? respond(request, pending) : pending.promise));
+  await open(ui);
+  await write(ui, subject, message);
+  const sending = ui.click('Send');
+  await ui.settle();
+  assert.ok(ui.button('Sending…'), 'the send is in flight');
+  return {
+    ui,
+    pending,
+    finish: async (response = json({ ok: true })) => {
+      pending.resolve(response);
+      await sending;
+      await ui.settle();
+    },
+  };
+}
+
+test('changing both fields while a message is sending keeps the newer text after the send succeeds', async t => {
+  const { ui, finish } = await startPendingSend(t);
+  await write(ui, 'A newer subject', 'A newer message');
+  await finish();
+
+  assert.ok(ui.text().includes('Email sent.'));
+  assert.deepEqual(draft(ui), { subject: 'A newer subject', message: 'A newer message' });
+});
+
+test('the request carries the text that was sent, not the newer edits', async t => {
+  const { ui, finish } = await startPendingSend(t, { subject: 'Interview next week', message: 'Can you meet Tuesday?' });
+  await write(ui, 'Something else', 'Something else entirely');
+  await finish();
+
+  assert.equal(emails(ui).length, 1);
+  assert.deepEqual(emails(ui)[0].body, {
+    application_id: 'application-1',
+    subject: 'Interview next week',
+    message: 'Can you meet Tuesday?',
+  });
+});
+
+test('changing only the subject while sending keeps both fields as they are', async t => {
+  const { ui, finish } = await startPendingSend(t, { subject: 'Hello', message: 'Hello there' });
+  await write(ui, 'Hello again', 'Hello there');
+  await finish();
+  assert.deepEqual(draft(ui), { subject: 'Hello again', message: 'Hello there' });
+});
+
+test('changing only the message while sending keeps both fields as they are', async t => {
+  const { ui, finish } = await startPendingSend(t, { subject: 'Hello', message: 'Hello there' });
+  await write(ui, 'Hello', 'Hello there, and one more thing');
+  await finish();
+  assert.deepEqual(draft(ui), { subject: 'Hello', message: 'Hello there, and one more thing' });
+});
+
+test('a field emptied while sending stays empty and the other field keeps its text', async t => {
+  const { ui, finish } = await startPendingSend(t, { subject: 'Hello', message: 'Hello there' });
+  await write(ui, '', 'Hello there');
+  await finish();
+  assert.deepEqual(draft(ui), { subject: '', message: 'Hello there' });
+});
+
+test('the kept draft can be sent next, and only the newer text goes out', async t => {
+  let requests = 0;
+  const { ui, finish } = await startPendingSend(t, {
+    subject: 'First',
+    message: 'First message',
+    // The first request stays pending; later ones succeed straight away.
+    respond: (request, pending) => (requests++ === 0 ? pending.promise : json({ ok: true })),
+  });
+  await write(ui, 'Second', 'Second message');
+  await finish();
+  assert.equal(ui.button('Send').props.disabled, false);
+
+  await ui.click('Send');
+  await ui.settle();
+  assert.equal(emails(ui).length, 2);
+  assert.deepEqual(emails(ui)[1].body, { application_id: 'application-1', subject: 'Second', message: 'Second message' });
+  assert.deepEqual(draft(ui), { subject: '', message: '' });
+});
+
+test('when nothing is edited during a send, the sent text is cleared as before', async t => {
+  const { ui, finish } = await startPendingSend(t);
+  await finish();
+  assert.ok(ui.text().includes('Email sent.'));
+  assert.deepEqual(draft(ui), { subject: '', message: '' });
+});
+
+test('edits made while a send fails are kept, and the error is shown', async t => {
+  const { ui, finish } = await startPendingSend(t);
+  await write(ui, 'A newer subject', 'A newer message');
+  await finish(json({ error: 'Please sign in again.' }, 401));
+
+  assert.ok(ui.text().includes('Please sign in again.'));
+  assert.ok(!ui.text().includes('Email sent.'));
+  assert.deepEqual(draft(ui), { subject: 'A newer subject', message: 'A newer message' });
+});
+
+test('unedited text from a failed send is kept so it can be retried', async t => {
+  const { ui, finish } = await startPendingSend(t);
+  await finish(json({ error: 'Please sign in again.' }, 401));
+  assert.deepEqual(draft(ui), { subject: 'Hello', message: 'Hello there' });
+  assert.equal(ui.button('Send').props.disabled, false);
+});
+
+test('a draft started while sending and a still-open form survive a successful send together', async t => {
+  const { ui, finish } = await startPendingSend(t);
+  await ui.click('Close');
+  await ui.settle();
+  await open(ui);
+  await write(ui, 'Written after closing', 'Still mine');
+  await finish();
+  assert.deepEqual(draft(ui), { subject: 'Written after closing', message: 'Still mine' });
+});
 
 // The form as the applicant page renders it, next to the decision buttons.
 const application = { id: 'application-1', project_id: 'project-1', volunteer_id: 'volunteer-1', status: 'pending', applicant_name: 'Review Volunteer', created_at: '2026-01-01T00:00:00Z' };
