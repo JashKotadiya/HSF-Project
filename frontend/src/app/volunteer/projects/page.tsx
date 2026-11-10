@@ -6,12 +6,12 @@ import supabase from "@/lib/supabase";
 import { useAuth } from "@/components/auth/AuthProvider";
 import PageHeader from "@/components/layout/PageHeader";
 import StatusBadge from "@/components/applications/StatusBadge";
-import SharedContact from "@/components/applications/SharedContact";
 import type { Application } from "@/lib/applications";
 import type { Project } from "@/lib/projects";
 
 type MyApplication = Pick<Application, "id" | "project_id" | "status" | "created_at"> & {
   project?: Pick<Project, "id" | "title" | "organization_name" | "location" | "status">;
+  sharedContactEmail?: string | null;
 };
 
 const SECTIONS = [
@@ -51,9 +51,39 @@ export default function VolunteerProjectsPage() {
         : { data: [] };
 
       const byId = new Map((projects ?? []).map((p) => [p.id, p]));
-      setApplications(
-        (apps ?? []).map((a) => ({ ...(a as MyApplication), project: byId.get(a.project_id) }))
+      let contactErrorMessage: string | null = null;
+      const contactEntries = await Promise.all(
+        (apps ?? []).map(async (app) => {
+          const { data, error: contactError } =
+            await supabase.rpc("get_application_contact_email", {
+              p_application_id: String(app.id),
+            });
+
+          if (contactError) {
+            contactErrorMessage = contactError.message;
+            return [app.id, null] as const;
+          }
+
+          const email = Array.isArray(data)
+            ? (data[0]?.contact_email ?? null)
+            : null;
+
+          return [app.id, email] as const;
+        })
       );
+
+      const contacts = new Map(contactEntries);
+
+      setApplications(
+        (apps ?? []).map((a) => ({
+          ...(a as MyApplication),
+          project: byId.get(a.project_id),
+          sharedContactEmail: contacts.get(a.id) ?? null,
+        }))
+      );
+      if (contactErrorMessage) {
+        setError(`Couldn't load shared contact emails: ${contactErrorMessage}`);
+      }
       setLoading(false);
     };
     void load();
@@ -166,11 +196,30 @@ function ApplicationCard({ app }: { app: MyApplication }) {
           Applied {new Date(app.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
           {project?.location ? ` · ${project.location}` : ""}
         </p>
-                {(app.status === "pending" || app.status === "approved") && (
-          <div className="mt-3">
-            <SharedContact applicationId={app.id} label="Organization contact" />
-          </div>
-        )}
+
+        <div className="mt-4 border-t border-[#E2E8F0] pt-4">
+          <p className="mb-2 text-xs font-semibold uppercase text-[#64748B]">
+            Organization contact
+          </p>
+
+          {app.sharedContactEmail ? (
+            <div className="space-y-2">
+              <p className="break-all text-sm text-[#475569]">
+                {app.sharedContactEmail}
+              </p>
+              <a
+                href={`mailto:${app.sharedContactEmail}`}
+                className="inline-flex rounded-md bg-[#114160] px-3 py-2 text-xs font-semibold text-white hover:bg-[#092130]"
+              >
+                Email contact
+              </a>
+            </div>
+          ) : (
+            <p className="text-sm text-[#64748B]">
+              Contact email not shared
+            </p>
+          )}
+        </div>
       </div>
       <div className="flex items-center justify-between border-t border-[#E2E8F0] bg-[#F8FAFC] px-6 py-4">
         <span className="text-xs font-medium text-[#64748B]">

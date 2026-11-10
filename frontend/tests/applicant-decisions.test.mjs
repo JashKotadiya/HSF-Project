@@ -90,3 +90,50 @@ test('the displayed decision comes from the database response', async t => {
   assert.ok(ui.text().includes('Decision saved for Review Volunteer: Not selected.'));
   assert.equal(ui.button('Reject').props.disabled, true);
 });
+
+test('a failed project query shows an error instead of an empty dashboard', async t => {
+  const ui = mount(t, 'app/nonprofit/dashboard/applicants/page.tsx', {
+    auth: { user: { id: 'org-1' }, role: 'nonprofit', loading: false },
+    fetch: () => json({ code: '42501', message: 'Permission denied' }, 403),
+  });
+  await ui.settle();
+  assert.ok(ui.find(node => node.props.role === 'alert'));
+  assert.ok(ui.text().includes("Couldn't load your projects"));
+  assert.ok(!ui.text().includes('No projects yet'));
+  assert.equal(ui.requests.filter(request => request.url.pathname.endsWith('/applications')).length, 0);
+  assert.equal(ui.requests.filter(request => request.url.pathname.endsWith('/posts')).length, 1);
+});
+
+test('a successful empty project query still shows No projects yet', async t => {
+  const ui = mount(t, 'app/nonprofit/dashboard/applicants/page.tsx', {
+    auth: { user: { id: 'org-1' }, role: 'nonprofit', loading: false },
+    fetch: () => json([]),
+  });
+  await ui.settle();
+  assert.ok(ui.text().includes('No projects yet'));
+  assert.ok(!ui.find(node => node.props.role === 'alert'));
+  assert.equal(ui.requests.filter(request => request.url.pathname.endsWith('/applications')).length, 0);
+});
+
+test('Retry recovers after a failed project query', async t => {
+  let failing = true;
+  const ui = mount(t, 'app/nonprofit/dashboard/applicants/page.tsx', {
+    auth: { user: { id: 'org-1' }, role: 'nonprofit', loading: false },
+    fetch: request => {
+      if (request.url.pathname.endsWith('/posts')) {
+        return failing
+          ? json({ code: '42501', message: 'Permission denied' }, 403)
+          : json([{ id: 'project-1', title: 'Community website' }]);
+      }
+      return json([application]);
+    },
+  });
+  await ui.settle();
+  assert.ok(ui.text().includes("Couldn't load your projects"));
+  failing = false;
+  await ui.click('Retry');
+  await ui.settle();
+  assert.ok(ui.text().includes('Community website'));
+  assert.ok(!ui.text().includes("Couldn't load your projects"));
+  assert.ok(ui.requests.some(request => request.url.pathname.endsWith('/applications')));
+});

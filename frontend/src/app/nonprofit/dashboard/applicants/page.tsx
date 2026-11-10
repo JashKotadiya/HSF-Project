@@ -7,6 +7,7 @@ import supabase from "@/lib/supabase";
 import { useAuth } from "@/components/auth/AuthProvider";
 import PageHeader from "@/components/layout/PageHeader";
 import StatusBadge from "@/components/applications/StatusBadge";
+import EmailApplicantForm from "@/components/applications/EmailApplicantForm";
 import {
   Application,
   ApplicationStatus,
@@ -14,9 +15,6 @@ import {
   SETUP_HINT,
   STATUS_LABELS,
 } from "@/lib/applications";
-
-import EmailApplicantForm from "@/components/applications/EmailApplicantForm";
-import SharedContact from "@/components/applications/SharedContact";
 
 type ProjectSummary = { id: string; title: string };
 const STATUS_FILTERS: (ApplicationStatus | "all")[] = ["all", "pending", "approved", "rejected"];
@@ -37,6 +35,8 @@ function ApplicantsDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
+  const [sharedContacts, setSharedContacts] = useState<Record<string, string | null>>({});
+  const [contactLookupError, setContactLookupError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [projectFilter, setProjectFilter] = useState(searchParams.get("project") ?? "all");
   const [statusFilter, setStatusFilter] = useState<ApplicationStatus | "all">("pending");
@@ -44,6 +44,7 @@ function ApplicantsDashboard() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   const updatingRef = useRef<string | null>(null);
 
   const viewedIds = useRef(new Set<string>());
@@ -51,27 +52,66 @@ function ApplicantsDashboard() {
   useEffect(() => {
     if (!userId) return;
     const load = async () => {
-      const { data: myProjects } = await supabase
+      setLoading(true);
+      setError(null);
+
+      const { data: myProjects, error: projectsError } = await supabase
         .from("posts")
         .select("id, title")
         .eq("user_id", userId)
         .order("created_at", { ascending: false });
+
+      if (projectsError) {
+        setError(`Couldn't load your projects: ${projectsError.message}`);
+        setProjects([]);
+        setApplications([]);
+        setLoading(false);
+        return;
+      }
+
       const projectList = (myProjects ?? []) as ProjectSummary[];
       setProjects(projectList);
 
       if (projectList.length > 0) {
         const { data: apps, error: appsError } = await supabase
           .from("applications")
-          .select("*")
+          .select("id, project_id, volunteer_id, status, created_at, resume_path, answers, applicant_name, applicant_email, viewed_at")
           .in("project_id", projectList.map((p) => p.id))
           .order("created_at", { ascending: false });
         if (appsError) setError(`${appsError.message}. ${SETUP_HINT}`);
-        setApplications((apps ?? []) as Application[]);
+        const rows = (apps ?? []) as Application[];
+        setApplications(rows);
+
+        let contactErrorMessage: string | null = null;
+        const contacts = await Promise.all(
+          rows.map(async (app) => {
+            const { data, error: contactError } = await supabase.rpc(
+              "get_application_contact_email",
+              { p_application_id: String(app.id) }
+            );
+            if (contactError) {
+              contactErrorMessage = contactError.message;
+              return [app.id, null] as const;
+            }
+            const email = Array.isArray(data) ? (data[0]?.contact_email ?? null) : null;
+            return [app.id, email] as const;
+          })
+        );
+        setSharedContacts(Object.fromEntries(contacts));
+        setContactLookupError(
+          contactErrorMessage
+            ? `Couldn't load shared contact emails: ${contactErrorMessage}`
+            : null
+        );
+      } else {
+        setApplications([]);
+        setSharedContacts({});
+        setContactLookupError(null);
       }
       setLoading(false);
     };
     void load();
-  }, [userId]);
+  }, [userId, retryCount]);
 
   const projectTitles = useMemo(
     () => new Map(projects.map((p) => [p.id, p.title])),
@@ -87,7 +127,7 @@ function ApplicantsDashboard() {
       (statusFilter === "all" || a.status === statusFilter) &&
       (!term ||
         (a.applicant_name ?? "").toLowerCase().includes(term) ||
-        
+        (a.applicant_email ?? "").toLowerCase().includes(term) ||
         (projectTitles.get(a.project_id) ?? "").toLowerCase().includes(term))
   );
   const selected = applications.find((a) => a.id === selectedId) ?? null;
@@ -107,7 +147,7 @@ function ApplicantsDashboard() {
 
   const updateStatus = async (app: Application, status: ApplicationStatus) => {
     if (updatingRef.current || app.status === status) return;
-        const applicantName = app.applicant_name || "this volunteer";
+    const applicantName = app.applicant_name || app.applicant_email || "this volunteer";
     const projectTitle = projectTitles.get(app.project_id) ?? "this project";
     if (status === "approved" && !window.confirm(`Approve ${applicantName} for "${projectTitle}"?`)) return;
 
@@ -164,62 +204,83 @@ function ApplicantsDashboard() {
       />
 
       <div className="mx-auto max-w-7xl px-6 py-12">
-        {error && (
-          <div className="mb-6 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">{error}</div>
-        )}
-
-        <div className="mb-6 flex flex-col gap-4 rounded-xl border border-[#E2E8F0] bg-white p-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex flex-wrap gap-2">
-            {STATUS_FILTERS.map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setStatusFilter(s)}
-                className={`rounded-full px-3 py-1.5 text-sm font-semibold transition ${
-                  statusFilter === s
-                    ? "bg-[#114160] text-white"
-                    : "bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0]"
-                }`}
-              >
-                {s === "all" ? "All" : STATUS_LABELS[s]} ({countFor(s)})
-              </button>
-            ))}
-          </div>
-          <select
-            value={projectFilter}
-            onChange={(e) => setProjectFilter(e.target.value)}
-            className="rounded-md border border-[#CBD5E1] bg-white px-3 py-2 text-sm font-medium text-[#0F172A] outline-none focus:border-[#114160]"
-          >
-            <option value="all">All projects</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.title}
-              </option>
-            ))}
-          </select>
-        </div>
-
         {loading ? (
           <div className="h-96 animate-pulse rounded-xl bg-white" />
-        ) : projects.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[#CBD5E1] bg-white py-20 text-center">
-            <h2 className="text-lg font-semibold text-[#092130]">No projects yet</h2>
-            <p className="mt-2 text-sm text-[#475569]">Create a project so volunteers can apply to it.</p>
-            <Link
-              href="/nonprofit/dashboard/edit/new"
+        ) : error && projects.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-xl border border-red-200 bg-white py-20 text-center">
+            <h2 className="text-lg font-semibold text-[#092130]">Couldn&apos;t load applicants</h2>
+            <p role="alert" className="mt-2 max-w-md text-sm text-red-700">
+              {error}
+            </p>
+            <p className="mt-2 max-w-md text-sm text-[#475569]">
+              This is a temporary problem loading your projects. Your listings were not removed.
+            </p>
+            <button
+              type="button"
+              onClick={() => setRetryCount((count) => count + 1)}
               className="mt-6 rounded-md bg-[#114160] px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-[#092130]"
             >
-              + Create Project
-            </Link>
+              Retry
+            </button>
           </div>
         ) : (
-          <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
-            <aside className="w-full shrink-0 rounded-xl border border-[#E2E8F0] bg-white p-6 lg:sticky lg:top-24 lg:w-80">
+          <>
+            {error && (
+              <div className="mb-6 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                {error}
+              </div>
+            )}
+
+            <div className="mb-6 flex flex-col gap-4 rounded-xl border border-[#E2E8F0] bg-white p-4 md:flex-row md:items-center md:justify-between">
+              <div className="flex flex-wrap gap-2">
+                {STATUS_FILTERS.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setStatusFilter(s)}
+                    className={`rounded-full px-3 py-1.5 text-sm font-semibold transition ${
+                      statusFilter === s
+                        ? "bg-[#114160] text-white"
+                        : "bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0]"
+                    }`}
+                  >
+                    {s === "all" ? "All" : STATUS_LABELS[s]} ({countFor(s)})
+                  </button>
+                ))}
+              </div>
+              <select
+                value={projectFilter}
+                onChange={(e) => setProjectFilter(e.target.value)}
+                className="rounded-md border border-[#CBD5E1] bg-white px-3 py-2 text-sm font-medium text-[#0F172A] outline-none focus:border-[#114160]"
+              >
+                <option value="all">All projects</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {projects.length === 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[#CBD5E1] bg-white py-20 text-center">
+                <h2 className="text-lg font-semibold text-[#092130]">No projects yet</h2>
+                <p className="mt-2 text-sm text-[#475569]">Create a project so volunteers can apply to it.</p>
+                <Link
+                  href="/nonprofit/dashboard/edit/new"
+                  className="mt-6 rounded-md bg-[#114160] px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-[#092130]"
+                >
+                  + Create Project
+                </Link>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
+                <aside className="w-full shrink-0 rounded-xl border border-[#E2E8F0] bg-white p-6 lg:sticky lg:top-24 lg:w-80">
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search by name or project..."
+                placeholder="Search by name, email, or project..."
                 className="mb-4 w-full rounded-md border border-[#CBD5E1] bg-white px-3 py-2 text-sm text-[#0F172A] outline-none transition focus:border-[#114160] focus:ring-1 focus:ring-[#114160]"
               />
               <ul className="-mx-2 space-y-1">
@@ -241,7 +302,7 @@ function ApplicantsDashboard() {
                     >
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-sm font-semibold text-[#092130] line-clamp-1">
-                        {app.applicant_name || "Volunteer"}
+                          {app.applicant_name || app.applicant_email || "Volunteer"}
                         </p>
                         <StatusBadge status={app.status} />
                       </div>
@@ -270,7 +331,7 @@ function ApplicantsDashboard() {
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="flex items-center gap-4">
                       <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#D3E6F2] text-xl font-bold text-[#114160]">
-                      {(selected.applicant_name || "V").charAt(0).toUpperCase()}
+                        {(selected.applicant_name || "V").charAt(0).toUpperCase()}
                       </div>
                       <div>
                         <h2 className="text-2xl font-bold text-[#092130]">
@@ -279,7 +340,29 @@ function ApplicantsDashboard() {
                         <p className="text-sm font-semibold text-[#114160]">
                           {projectTitles.get(selected.project_id) ?? "Project"}
                         </p>
-                        <SharedContact key={selected.id} applicationId={selected.id} label="Contact" />
+                        <div className="mt-2 space-y-2">
+                          {contactLookupError ? (
+                            <p role="alert" className="text-sm text-red-700">
+                              {contactLookupError}
+                            </p>
+                          ) : sharedContacts[selected.id] ? (
+                            <>
+                              <p className="break-all text-sm text-[#475569]">
+                                {sharedContacts[selected.id]}
+                              </p>
+                              <a
+                                href={`mailto:${sharedContacts[selected.id]}`}
+                                className="inline-flex rounded-md bg-[#114160] px-3 py-2 text-sm font-semibold text-white hover:bg-[#092130]"
+                              >
+                                Email contact
+                              </a>
+                            </>
+                          ) : (
+                            <p className="text-sm text-[#64748B]">
+                              Contact email not shared
+                            </p>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <div className="text-right">
@@ -342,11 +425,14 @@ function ApplicantsDashboard() {
                       Download Resume
                     </button>
                   </div>
-                                    <EmailApplicantForm key={selected.id} applicationId={selected.id} />
+
+                  <EmailApplicantForm key={selected.id} applicationId={selected.id} />
                 </div>
               )}
             </section>
           </div>
+            )}
+          </>
         )}
       </div>
     </main>

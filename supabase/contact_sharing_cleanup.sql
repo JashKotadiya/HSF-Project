@@ -1,4 +1,4 @@
--- Run in Supabase → SQL Editor, AFTER supabase/contact_sharing.sql and AFTER every
+-- Run in Supabase → SQL Editor, AFTER supabase/contact_email_preferences.sql and AFTER every
 -- function that emails volunteers finds them through their account instead of
 -- applications.applicant_email (send-match-emails and send-custom-email already do;
 -- send-status-email must be updated first, or its emails will stop).

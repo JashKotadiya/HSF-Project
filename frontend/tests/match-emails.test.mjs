@@ -365,7 +365,7 @@ test('error responses do not reveal internal details', async () => {
 const VOLUNTEER_CONTACT = 'volunteer.contact@example.test';
 const OWNER_CONTACT = 'owner.contact@example.test';
 const LOGIN_ADDRESSES = ['owner@example.test', 'volunteer@example.test'];
-const profile = (id, contact_email, share_contact) => ({ id, contact_email, share_contact });
+const profile = (id, contact_email, share_contact_email) => ({ id, contact_email, share_contact_email });
 const sharing = ({ volunteer = false, owner = false } = {}) => [
   profile(VOLUNTEER_ID, VOLUNTEER_CONTACT, volunteer),
   profile(OWNER_ID, OWNER_CONTACT, owner),
