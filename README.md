@@ -56,6 +56,7 @@ The scripts in `supabase/` extend that existing schema:
 
 - [profiles_signup.sql](supabase/profiles_signup.sql) configures profile access policies and creates profiles when users sign up.
 - [applications.sql](supabase/applications.sql) configures application fields, access policies, and the private `resumes` storage bucket.
+- [conversations.sql](supabase/conversations.sql) configures per-application messaging tables, access policies, and RPCs for listing, sending, and marking messages read.
 - [volunteer_profiles.sql](supabase/volunteer_profiles.sql) adds editable profile details and resume policies.
 - [interests.sql](supabase/interests.sql) adds the shared cause-category list and private saved volunteer preferences. Run it after `profiles_signup.sql`. Existing project causes are retained and registered, and new project causes are registered automatically.
 - [search_projects.sql](supabase/search_projects.sql) provides cause/skill/status/keyword filtering and stable server-side sorting and pagination. It replaces the earlier search signatures while preserving the original five positional arguments and named calls.
