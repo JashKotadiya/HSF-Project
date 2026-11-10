@@ -22,7 +22,7 @@ begin
       raise exception 'Profile role cannot be changed';
     end if;
 
-    if old.role <> 'nonprofit' and (
+    if old.role not in ('nonprofit', 'organization', 'org') and (
       new.organization_name is distinct from old.organization_name
       or new.mission_statement is distinct from old.mission_statement
       or new.description is distinct from old.description

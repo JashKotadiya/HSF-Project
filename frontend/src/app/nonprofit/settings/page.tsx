@@ -103,81 +103,84 @@ export default function NonprofitSettingsPage() {
     null
   );
 
-  // Load the organization settings for the current user.
   
-useEffect(() => {
-  if (authLoading || !userId || role !== "nonprofit") {
-    return;
-  }
+  // Load the organization settings for the current user.
+  useEffect(() => {
+    if (authLoading || !userId || role !== "nonprofit") {
+      return;
+    }
 
-  let cancelled = false;
+    let cancelled = false;
 
-  // A new request must not inherit the previous
-  // request's successful-loading state.
-  setLoading(true);
-  setLoadedUserId(null);
-  setError(null);
-  setMessage(null);
-
-  async function loadSettings() {
-    try {
-      const { data, error: loadError } = await supabase
-        .from("profiles")
-        .select(
-          "organization_name, mission_statement, description"
-        )
-        .eq("id", userId)
-        .eq("role", "nonprofit")
-        .maybeSingle();
+    async function loadSettings() {
+      // Avoid synchronous state updates in the effect.
+      await Promise.resolve();
 
       if (cancelled) return;
 
-      if (loadError) {
-        throw new Error(
-          `Couldn't load organization settings: ${loadError.message}`
-        );
-      }
-
-      if (!data) {
-        throw new Error(
-          "Organization profile not found. Please retry loading."
-        );
-      }
-
-      const saved: OrganizationSettings = {
-        organization_name: data.organization_name ?? "",
-        mission_statement: data.mission_statement ?? "",
-        description: data.description ?? "",
-      };
-
-      // Only a confirmed successful read establishes
-      // the baseline for editing and saving.
-      setSavedSettings(saved);
-      setSettings(readDraft(userId) ?? saved);
-      setLoadedUserId(userId);
-      setError(null);
-    } catch (loadFailure) {
-      if (cancelled) return;
-
+      setLoading(true);
       setLoadedUserId(null);
-      setError(
-        loadFailure instanceof Error
-          ? loadFailure.message
-          : "Couldn't load organization settings."
-      );
-    } finally {
-      if (!cancelled) {
-        setLoading(false);
+      setError(null);
+      setMessage(null);
+
+      try {
+        const { data, error: loadError } = await supabase
+          .from("profiles")
+          .select(
+            "organization_name, mission_statement, description"
+          )
+          .eq("id", userId)
+          .in("role", ["nonprofit", "organization", "org"])
+          .maybeSingle();
+
+        if (cancelled) return;
+
+        if (loadError) {
+          throw new Error(
+            `Couldn't load organization settings: ${loadError.message}`
+          );
+        }
+
+        if (!data) {
+          throw new Error(
+            "Organization profile not found. Please retry loading."
+          );
+        }
+
+        const saved: OrganizationSettings = {
+          organization_name: data.organization_name ?? "",
+          mission_statement: data.mission_statement ?? "",
+          description: data.description ?? "",
+        };
+
+        // Only a successful read enables editing and saving.
+        setSavedSettings(saved);
+        setSettings(readDraft(userId) ?? saved);
+        setLoadedUserId(userId);
+        setError(null);
+      } catch (loadFailure) {
+        if (cancelled) return;
+
+        setLoadedUserId(null);
+        setError(
+          loadFailure instanceof Error
+            ? loadFailure.message
+            : "Couldn't load organization settings."
+        );
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
-  }
 
-  void loadSettings();
+    void loadSettings();
 
-  return () => {
-    cancelled = true;
-  };
-}, [userId, role, authLoading, retryCount]);
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, role, authLoading, retryCount]);
+
 
   function updateField(
     field: keyof OrganizationSettings,
@@ -253,7 +256,7 @@ useEffect(() => {
         .from("profiles")
         .update(updated)
         .eq("id", userId)
-        .eq("role", "nonprofit")
+        .in("role", ["nonprofit", "organization", "org"])
         .select(
           "organization_name, mission_statement, description"
         )
