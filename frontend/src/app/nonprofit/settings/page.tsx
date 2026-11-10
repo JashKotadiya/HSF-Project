@@ -8,12 +8,17 @@ type OrganizationSettings = {
     organization_name: string;
     mission_statement: string;
     description: string;
+    contact_email: string;
+    share_contact_email: boolean;
 };
 const EMPTY_SETTINGS: OrganizationSettings = {
     organization_name: "",
     mission_statement: "",
     description: "",
+    contact_email: "",
+    share_contact_email: false,
 };
+const CONTACT_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const inputClass = "w-full rounded-md border border-[#CBD5E1] bg-white px-4 py-3 text-sm text-[#0F172A] outline-none transition focus:border-[#114160] focus:ring-2 focus:ring-[#D3E6F2]";
 function draftKey(userId: string) {
     return `hsf-nonprofit-settings-draft-${userId}`;
@@ -34,10 +39,13 @@ function readDraft(userId: string): OrganizationSettings | null {
             typeof parsed.description !== "string") {
             return null;
         }
+        const draft = parsed as Record<string, unknown>;
         return {
             organization_name: parsed.organization_name,
             mission_statement: parsed.mission_statement,
             description: parsed.description,
+            contact_email: typeof draft.contact_email === "string" ? draft.contact_email : "",
+            share_contact_email: draft.share_contact_email === true,
         };
     }
     catch {
@@ -106,7 +114,7 @@ export default function NonprofitSettingsPage() {
             try {
                 const { data, error: loadError } = await supabase
                     .from("profiles")
-                    .select("organization_name, mission_statement, description")
+                    .select("organization_name, mission_statement, description, contact_email, share_contact_email")
                     .eq("id", userId)
                     .in("role", ["nonprofit", "organization", "org"])
                     .maybeSingle();
@@ -122,6 +130,8 @@ export default function NonprofitSettingsPage() {
                     organization_name: data.organization_name ?? "",
                     mission_statement: data.mission_statement ?? "",
                     description: data.description ?? "",
+                    contact_email: data.contact_email ?? "",
+                    share_contact_email: data.share_contact_email ?? false,
                 };
                 // Only a successful read enables editing and saving.
                 setSavedSettings(saved);
@@ -148,7 +158,10 @@ export default function NonprofitSettingsPage() {
             cancelled = true;
         };
     }, [userId, role, authLoading, retryCount]);
-    function updateField(field: keyof OrganizationSettings, value: string) {
+    function updateField<K extends keyof OrganizationSettings>(
+        field: K,
+        value: OrganizationSettings[K]
+    ) {
         if (!userId || loadedUserId !== userId || saving) {
             return;
         }
@@ -159,13 +172,18 @@ export default function NonprofitSettingsPage() {
         setSettings(updated);
         writeDraft(userId, updated);
         setMessage(null);
+        setError(null);
     }
     const hasChanges = settings.organization_name !==
         savedSettings.organization_name ||
         settings.mission_statement !==
             savedSettings.mission_statement ||
         settings.description !==
-            savedSettings.description;
+            savedSettings.description ||
+        settings.contact_email !==
+            savedSettings.contact_email ||
+        settings.share_contact_email !==
+            savedSettings.share_contact_email;
     function discardChanges() {
         if (!userId || saving)
             return;
@@ -182,10 +200,20 @@ export default function NonprofitSettingsPage() {
             saving) {
             return;
         }
+        const contactEmail = settings.contact_email.trim();
+        if (
+            contactEmail &&
+            (contactEmail.length > 254 || !CONTACT_EMAIL_PATTERN.test(contactEmail))
+        ) {
+            setError("Please enter a valid contact email address.");
+            return;
+        }
         const updated: OrganizationSettings = {
             organization_name: settings.organization_name.trim(),
             mission_statement: settings.mission_statement.trim(),
             description: settings.description.trim(),
+            contact_email: contactEmail,
+            share_contact_email: contactEmail !== "" && settings.share_contact_email,
         };
         if (!updated.organization_name) {
             setError("Organization name is required.");
@@ -204,10 +232,16 @@ export default function NonprofitSettingsPage() {
         try {
             const { data, error: saveError } = await supabase
                 .from("profiles")
-                .update(updated)
+                .update({
+                    organization_name: updated.organization_name,
+                    mission_statement: updated.mission_statement,
+                    description: updated.description,
+                    contact_email: updated.contact_email || null,
+                    share_contact_email: updated.share_contact_email,
+                })
                 .eq("id", savingUserId)
                 .in("role", ["nonprofit", "organization", "org"])
-                .select("organization_name, mission_statement, description")
+                .select("organization_name, mission_statement, description, contact_email, share_contact_email")
                 .single();
             // Verify the session itself, not just the user ID captured by
             // this render. A save may complete before React renders a new user.
@@ -226,6 +260,8 @@ export default function NonprofitSettingsPage() {
                 organization_name: data.organization_name ?? "",
                 mission_statement: data.mission_statement ?? "",
                 description: data.description ?? "",
+                contact_email: data.contact_email ?? "",
+                share_contact_email: data.share_contact_email ?? false,
             };
             // Guard the form, saved baseline, and draft against stale saves.
             if (requestId !== saveRequestRef.current)
@@ -354,6 +390,52 @@ export default function NonprofitSettingsPage() {
             </label>
             <textarea id="description" className={`${inputClass} min-h-40 resize-y`} value={settings.description} onChange={(event) => updateField("description", event.target.value)} placeholder="Tell volunteers more about your organization, its work, and its impact." maxLength={3000} disabled={saving}/>
           </div>
+          <div className="border-t border-[#E2E8F0] pt-6">
+            <h3 className="text-lg font-bold text-[#092130]">Contact Preferences</h3>
+            <p className="mt-2 text-sm text-[#64748B]">
+              Choose whether volunteers who apply to your projects can contact your organization by email.
+            </p>
+          </div>
+          <div>
+            <label htmlFor="contact-email" className="mb-2 block text-sm font-semibold text-[#092130]">
+              Contact Email (Optional)
+            </label>
+            <input
+              id="contact-email"
+              type="email"
+              className={inputClass}
+              value={settings.contact_email}
+              onChange={(event) => updateField("contact_email", event.target.value)}
+              placeholder="contact@organization.org"
+              maxLength={254}
+              disabled={saving}
+            />
+            <p className="mt-2 text-xs text-[#64748B]">
+              This is separate from your login email. Providing a contact email is completely optional.
+            </p>
+          </div>
+          <div className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-5">
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                checked={settings.share_contact_email}
+                onChange={(event) => updateField("share_contact_email", event.target.checked)}
+                disabled={saving || !settings.contact_email.trim()}
+                className="mt-1 h-4 w-4 accent-[#114160]"
+              />
+              <span>
+                <span className="block text-sm font-semibold text-[#092130]">
+                  Share my contact email with applicants
+                </span>
+                <span className="mt-1 block text-sm text-[#64748B]">
+                  When enabled, volunteers who have applied to your projects can see this address while their application is pending or approved.
+                </span>
+              </span>
+            </label>
+          </div>
+          <p className="text-xs text-[#64748B]">
+            If you leave this option unchecked, your contact email will not be shown to applicants.
+          </p>
           <div className="flex flex-wrap items-center justify-end gap-3 border-t border-[#E2E8F0] pt-6">
             <Link href="/nonprofit/dashboard" className="rounded-md border border-[#CBD5E1] bg-white px-5 py-3 text-sm font-semibold text-[#092130] transition hover:bg-[#F1F5F9]">
               Back to Dashboard

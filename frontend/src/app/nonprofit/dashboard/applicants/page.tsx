@@ -34,6 +34,8 @@ function ApplicantsDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
+  const [sharedContacts, setSharedContacts] = useState<Record<string, string | null>>({});
+  const [contactLookupError, setContactLookupError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [projectFilter, setProjectFilter] = useState(searchParams.get("project") ?? "all");
   const [statusFilter, setStatusFilter] = useState<ApplicationStatus | "all">("pending");
@@ -72,13 +74,38 @@ function ApplicantsDashboard() {
       if (projectList.length > 0) {
         const { data: apps, error: appsError } = await supabase
           .from("applications")
-          .select("*")
+          .select("id, project_id, volunteer_id, status, created_at, resume_path, answers, applicant_name, applicant_email, viewed_at")
           .in("project_id", projectList.map((p) => p.id))
           .order("created_at", { ascending: false });
         if (appsError) setError(`${appsError.message}. ${SETUP_HINT}`);
-        setApplications((apps ?? []) as Application[]);
+        const rows = (apps ?? []) as Application[];
+        setApplications(rows);
+
+        let contactErrorMessage: string | null = null;
+        const contacts = await Promise.all(
+          rows.map(async (app) => {
+            const { data, error: contactError } = await supabase.rpc(
+              "get_application_contact_email",
+              { p_application_id: String(app.id) }
+            );
+            if (contactError) {
+              contactErrorMessage = contactError.message;
+              return [app.id, null] as const;
+            }
+            const email = Array.isArray(data) ? (data[0]?.contact_email ?? null) : null;
+            return [app.id, email] as const;
+          })
+        );
+        setSharedContacts(Object.fromEntries(contacts));
+        setContactLookupError(
+          contactErrorMessage
+            ? `Couldn't load shared contact emails: ${contactErrorMessage}`
+            : null
+        );
       } else {
         setApplications([]);
+        setSharedContacts({});
+        setContactLookupError(null);
       }
       setLoading(false);
     };
@@ -303,7 +330,7 @@ function ApplicantsDashboard() {
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="flex items-center gap-4">
                       <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#D3E6F2] text-xl font-bold text-[#114160]">
-                        {(selected.applicant_name || selected.applicant_email || "V").charAt(0).toUpperCase()}
+                        {(selected.applicant_name || "V").charAt(0).toUpperCase()}
                       </div>
                       <div>
                         <h2 className="text-2xl font-bold text-[#092130]">
@@ -312,11 +339,29 @@ function ApplicantsDashboard() {
                         <p className="text-sm font-semibold text-[#114160]">
                           {projectTitles.get(selected.project_id) ?? "Project"}
                         </p>
-                        {selected.applicant_email && (
-                          <a href={`mailto:${selected.applicant_email}`} className="text-sm text-[#64748B] hover:underline">
-                            {selected.applicant_email}
-                          </a>
-                        )}
+                        <div className="mt-2 space-y-2">
+                          {contactLookupError ? (
+                            <p role="alert" className="text-sm text-red-700">
+                              {contactLookupError}
+                            </p>
+                          ) : sharedContacts[selected.id] ? (
+                            <>
+                              <p className="break-all text-sm text-[#475569]">
+                                {sharedContacts[selected.id]}
+                              </p>
+                              <a
+                                href={`mailto:${sharedContacts[selected.id]}`}
+                                className="inline-flex rounded-md bg-[#114160] px-3 py-2 text-sm font-semibold text-white hover:bg-[#092130]"
+                              >
+                                Email contact
+                              </a>
+                            </>
+                          ) : (
+                            <p className="text-sm text-[#64748B]">
+                              Contact email not shared
+                            </p>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <div className="text-right">
