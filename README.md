@@ -57,6 +57,23 @@ The scripts in `supabase/` extend that existing schema:
 - [profiles_signup.sql](supabase/profiles_signup.sql) configures profile access policies and creates profiles when users sign up.
 - [applications.sql](supabase/applications.sql) configures application fields, access policies, and the private `resumes` storage bucket.
 - [conversations.sql](supabase/conversations.sql) configures per-application messaging tables, access policies, and RPCs for listing, sending, and marking messages read.
+- [volunteer_profiles.sql](supabase/volunteer_profiles.sql) adds editable profile details and resume policies.
+- [interests.sql](supabase/interests.sql) adds the shared cause-category list and private saved volunteer preferences. Run it after `profiles_signup.sql`. Existing project causes are retained and registered, and new project causes are registered automatically.
+- [search_projects.sql](supabase/search_projects.sql) provides cause/skill/status/keyword filtering and stable server-side sorting and pagination. It replaces the earlier search signatures while preserving the original five positional arguments and named calls.
+
+Apply `interests.sql` and the updated `search_projects.sql` **before deploying the frontend changes for PR #81**. Both scripts run in transactions and can be rerun. Without the updated search function, the browser shows a retryable error rather than returning incomplete matches. Volunteers save their preferences in the **Interests / Cause Areas** section of their profile; those selections are independent of technical skills.
+
+Local regression checks (no production database needed):
+
+```bash
+npm ci
+npm run test:local
+cd frontend
+npm ci
+npm run test:applications
+npm run test:auth
+npx tsc --noEmit --incremental false
+```
 
 These scripts assume the base tables already exist. For a new Supabase project, obtain the base schema from a maintainer before applying these scripts in the SQL Editor.
 
@@ -139,19 +156,19 @@ Windows PowerShell:
 
 ```powershell
 cd backend
-.\.venv\Scripts\python.exe main.py
+.\.venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000
 ```
 
 macOS or Linux:
 
 ```bash
 cd backend
-./.venv/bin/python main.py
+./.venv/bin/python -m uvicorn main:app --reload --port 8000
 ```
 
-If you have activated the backend virtual environment, you can run `python main.py` instead. The backend runs at `http://localhost:8000` and reloads when Python files change. Open [http://localhost:8000/docs](http://localhost:8000/docs) for interactive API documentation. The backend has no route at `/`, so use `/docs` to check that it is running.
+The backend runs at `http://localhost:8000`. Open [http://localhost:8000/docs](http://localhost:8000/docs) for interactive API documentation. The backend has no route at `/`, so use `/docs` to check that it is running.
 
-Keep both terminals open while developing. Press `Ctrl+C` in either terminal to stop that server. The automatic reload is intended for development. See the [FastAPI server documentation](https://fastapi.tiangolo.com/deployment/manually/).
+Keep both terminals open while developing. Press `Ctrl+C` in either terminal to stop that server. The `--reload` option restarts the backend when its Python files change and is intended for development. See the [FastAPI server documentation](https://fastapi.tiangolo.com/deployment/manually/).
 
 ## Frontend commands
 

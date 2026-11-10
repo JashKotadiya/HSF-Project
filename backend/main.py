@@ -3,9 +3,12 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from supabase import Client, create_client
+from httpx import RequestError
+from pydantic import BaseModel, ValidationError
+from supabase import Client, ClientOptions, create_client
+from supabase_auth.errors import AuthApiError, AuthError
 import os
+import re
 
 # Always load backend/.env (cwd is not always the backend folder when using uvicorn).
 _BACKEND_DIR = Path(__file__).resolve().parent
@@ -45,13 +48,39 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 supabase_public: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
-def get_supabase(authorization: str = Header(None)) -> Client:
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Authorization header missing")
+def get_supabase(authorization: str | None = Header(None)) -> Client:
+    credentials_error = HTTPException(
+        status_code=401,
+        detail="Missing, invalid, or expired bearer token",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    parts = authorization.split() if authorization else []
+    if (
+        len(parts) != 2
+        or parts[0].lower() != "bearer"
+        or re.fullmatch(r"[A-Za-z0-9._~+/-]+=*", parts[1]) is None
+    ):
+        raise credentials_error
 
-    token = authorization.replace("Bearer ", "")
-    client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    client.auth.set_session(access_token=token, refresh_token="")
+    token = parts[1]
+    # Each request keeps the caller's token for RLS, without creating a login
+    # session or trying to refresh an expired token with an empty refresh token.
+    client = create_client(SUPABASE_URL, SUPABASE_KEY, options=ClientOptions(
+        headers={"Authorization": f"Bearer {token}"},
+        auto_refresh_token=False,
+        persist_session=False,
+    ))
+    try:
+        user_response = client.auth.get_user(token)
+    except AuthApiError as error:
+        if error.status in (400, 401, 403, 422):
+            raise credentials_error from error
+        raise HTTPException(status_code=503, detail="Authentication service unavailable") from error
+    except (AuthError, RequestError, ValidationError) as error:
+        raise HTTPException(status_code=503, detail="Authentication service unavailable") from error
+
+    if user_response is None or user_response.user is None:
+        raise credentials_error
     return client
 
 
