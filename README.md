@@ -59,6 +59,7 @@ The scripts in `supabase/` extend that existing schema:
 - [conversations.sql](supabase/conversations.sql) configures per-application messaging tables, access policies, and RPCs for listing, sending, and marking messages read.
 - [nonprofit_settings.sql](supabase/nonprofit_settings.sql) adds organization profile fields and blocks volunteers from editing them.
 - [contact_email_preferences.sql](supabase/contact_email_preferences.sql) adds optional contact email sharing for volunteers and nonprofits.
+- [email_deliveries.sql](supabase/email_deliveries.sql) tracks each match-notification email separately so retries do not skip or duplicate sends. Run it before deploying the updated `send-match-emails` function.
 - [contact_sharing_cleanup.sql](supabase/contact_sharing_cleanup.sql) clears `applications.applicant_email` after status emails deliver to account addresses. Run it only after the updated edge functions are deployed.
 - [volunteer_profiles.sql](supabase/volunteer_profiles.sql) adds editable profile details and resume policies.
 - [interests.sql](supabase/interests.sql) adds the shared cause-category list and private saved volunteer preferences. Run it after `profiles_signup.sql`. Existing project causes are retained and registered, and new project causes are registered automatically.
