@@ -69,13 +69,34 @@ begin
   end loop;
 end $$;
 
+-- A body must contain at least one non-whitespace character. btrim() only
+-- strips spaces, so tabs and line breaks are checked with [:space:].
+-- NOT VALID keeps reruns working if older whitespace-only rows exist; new
+-- and updated rows are always checked, and the constraint is validated once
+-- no existing rows break it.
 alter table public.messages
   add constraint messages_body_check
   check (
     body is not null
-    and btrim(body) <> ''
+    and body ~ '[^[:space:]]'
     and char_length(body) <= 4000
-  );
+  ) not valid;
+
+do $$
+declare v_invalid_count bigint;
+begin
+  select count(*) into v_invalid_count
+  from public.messages m
+  where m.body is null
+    or m.body !~ '[^[:space:]]'
+    or char_length(m.body) > 4000;
+
+  if v_invalid_count = 0 then
+    alter table public.messages validate constraint messages_body_check;
+  else
+    raise notice 'messages_body_check left NOT VALID: % existing message(s) have an empty or oversized body', v_invalid_count;
+  end if;
+end $$;
 
 do $$
 begin
@@ -245,7 +266,7 @@ begin
       using errcode = '22023';
   end if;
 
-  if p_body is null or btrim(p_body) = '' then
+  if p_body is null or p_body !~ '[^[:space:]]' then
     raise exception 'Message body must not be empty'
       using errcode = '23514';
   end if;
