@@ -252,6 +252,63 @@ test('empty oversized and idempotent sends behave as specified', async t => {
   assert.equal(otherSend.rows[0].client_message_id, clientE);
 });
 
+const whitespaceOnlyBodies = ['\n\t\r\n', '\t\t', '\r\n', ' \n ', '\v\f'];
+
+function clientId(n) {
+  return `30000000-0000-0000-0000-${String(n).padStart(12, '0')}`;
+}
+
+function insertMessageDirectly(db, conversationId, body, clientMessageId) {
+  return db.query(
+    'INSERT INTO public.messages (conversation_id, sender_id, body, client_message_id) VALUES ($1, $2, $3, $4)',
+    [conversationId, volunteer, body, clientMessageId]
+  );
+}
+
+async function messageCount(db) {
+  return (await db.query('SELECT count(*)::int AS n FROM public.messages')).rows[0].n;
+}
+
+async function bodyCheckIsValidated(db) {
+  return (await db.query(
+    "SELECT convalidated FROM pg_constraint WHERE conrelid = 'public.messages'::regclass AND conname = 'messages_body_check'"
+  )).rows[0].convalidated;
+}
+
+test('whitespace-only bodies are rejected while multiline text is kept', async t => {
+  const db = await fixture(t);
+  const app = await createApplication(db);
+
+  await asUser(db, volunteer, async () => {
+    for (const [i, body] of whitespaceOnlyBodies.entries()) {
+      await assert.rejects(
+        () => send(db, app.id, body, clientId(i)),
+        error => error.code === '23514',
+        `expected ${JSON.stringify(body)} to be rejected`
+      );
+    }
+  });
+  assert.equal(await messageCount(db), 0);
+
+  const multiline = await asUser(db, volunteer, () => send(db, app.id, 'Line one\n\nLine two', clientA));
+  assert.equal(multiline.rows[0].body, 'Line one\n\nLine two');
+
+  const padded = await asUser(db, volunteer, () => send(db, app.id, '\n\tHello\r\n', clientB));
+  assert.equal(padded.rows[0].body, '\n\tHello\r\n');
+
+  // The table constraint rejects whitespace-only bodies even when the RPC is bypassed.
+  const conversationId = multiline.rows[0].conversation_id;
+  for (const [i, body] of whitespaceOnlyBodies.entries()) {
+    await assert.rejects(
+      () => insertMessageDirectly(db, conversationId, body, clientId(100 + i)),
+      error => error.code === '23514',
+      `expected direct insert of ${JSON.stringify(body)} to be rejected`
+    );
+  }
+  assert.equal(await messageCount(db), 2);
+  assert.equal(await bodyCheckIsValidated(db), true);
+});
+
 test('message pages are ordered and cursors do not skip or repeat', async t => {
   const db = await fixture(t);
   const app = await createApplication(db);
@@ -381,4 +438,33 @@ test('setup rerun preserves conversations messages and read cursors', async t =>
   };
 
   assert.deepEqual(after, before);
+});
+
+test('setup rerun keeps legacy whitespace-only messages and still enforces the body rule', async t => {
+  const db = await fixture(t);
+  const app = await createApplication(db);
+  const sent = await asUser(db, volunteer, () => send(db, app.id, 'Real message', clientA));
+  const conversationId = sent.rows[0].conversation_id;
+
+  // Simulate a row stored before the stricter rule existed.
+  await db.exec('ALTER TABLE public.messages DROP CONSTRAINT messages_body_check');
+  await insertMessageDirectly(db, conversationId, '\n\t\r\n', clientB);
+
+  await db.exec(setupSql);
+
+  assert.equal(await messageCount(db), 2);
+  assert.equal(await bodyCheckIsValidated(db), false);
+  await assert.rejects(
+    () => asUser(db, volunteer, () => send(db, app.id, '\t\r\n', clientC)),
+    error => error.code === '23514'
+  );
+  await assert.rejects(
+    () => insertMessageDirectly(db, conversationId, '\t\r\n', clientD),
+    error => error.code === '23514'
+  );
+
+  // Once the legacy row is gone, the next rerun validates the constraint.
+  await db.query('DELETE FROM public.messages WHERE client_message_id = $1', [clientB]);
+  await db.exec(setupSql);
+  assert.equal(await bodyCheckIsValidated(db), true);
 });
