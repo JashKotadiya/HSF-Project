@@ -8,7 +8,6 @@ import PageHeader from "@/components/layout/PageHeader";
 import StatusBadge from "@/components/applications/StatusBadge";
 import type { Application } from "@/lib/applications";
 import type { Project } from "@/lib/projects";
-import { messageLink } from "@/lib/messaging";
 
 type MyApplication = Pick<Application, "id" | "project_id" | "status" | "created_at"> & {
   project?: Pick<Project, "id" | "title" | "organization_name" | "location" | "status">;
@@ -223,16 +222,13 @@ function ApplicationCard({ app }: { app: MyApplication }) {
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#E2E8F0] bg-[#F8FAFC] px-6 py-4">
-        <Link href={messageLink(app.id)} className="text-sm font-semibold text-[#114160] underline">
-          {app.status === "rejected" ? "View conversation" : "Message organization"}
-        </Link>
         <span className="text-xs font-medium text-[#64748B]">
           {project ? (isOpen ? "Open project" : "Project closed") : "Removed"}
         </span>
         {project && isOpen && (
           <Link
             href={`/projects/${project.id}`}
-            className="inline-flex items-center justify-center rounded-md bg-[#114160] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#092130]"
+            className="inline-flex min-h-11 items-center justify-center rounded-lg bg-[#114160] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#092130] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2182BF]"
           >
             View Project
           </Link>

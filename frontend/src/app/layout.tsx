@@ -21,6 +21,7 @@ export const metadata = {
 
 import Navbar from "@/components/layout/Navbar";
 import AuthProvider from "@/components/auth/AuthProvider";
+import MessagingDock from "@/components/messaging/MessagingDock";
 
 export default function RootLayout({
   children,
@@ -33,6 +34,7 @@ export default function RootLayout({
         <AuthProvider>
           <Navbar />
           {children}
+          <MessagingDock />
         </AuthProvider>
       </body>
     </html>

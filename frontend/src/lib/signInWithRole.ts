@@ -25,16 +25,13 @@ export async function signInWithRole(
       .eq("id", data.user.id)
       .maybeSingle();
     if (profileError) {
-      throw new Error("Couldn't verify your account type. Please try again.");
+      throw new Error("Couldn't sign in. Please try again.");
     }
 
     const actualRole = normalizeRoleFromUser(profile, data.user);
     if (actualRole !== expectedRole) {
-      throw new Error(
-        actualRole === "nonprofit"
-          ? 'This is an organization account. Select "I am an Organization" to sign in.'
-          : 'This is a volunteer account. Select "I am a Volunteer" to sign in.'
-      );
+      // Match the invalid-credentials response without revealing the stored role.
+      throw new Error("Invalid login credentials");
     }
 
     const { data: activeSession, error: sessionError } = await supabase.auth.setSession({

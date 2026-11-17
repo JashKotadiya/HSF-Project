@@ -35,3 +35,8 @@ body {
 .hsf-heading {
   font-family: var(--font-work-sans), var(--font-open-sans), sans-serif;
 }
+
+/* Shared secondary actions in the full inbox and compact messaging panel. */
+.message-action {
+  @apply inline-flex min-h-10 items-center justify-center rounded-lg border border-[#CBD5E1] bg-white px-3 py-2 text-sm font-semibold text-[#114160] transition hover:bg-[#F1F5F9] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2182BF] disabled:cursor-not-allowed disabled:opacity-50;
+}
