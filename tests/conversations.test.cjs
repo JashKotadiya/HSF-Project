@@ -411,6 +411,56 @@ test('read cursors stay independent and only move forward', async t => {
   });
 });
 
+test('stale read targets leave the stored cursor untouched and later targets still advance it', async t => {
+  const db = await fixture(t);
+  const app = await createApplication(db);
+
+  await asUser(db, owner, () => send(db, app.id, 'M1', clientA));
+  await asUser(db, owner, () => send(db, app.id, 'M2', clientB));
+  const sent = await asUser(db, owner, () => send(db, app.id, 'M3', clientC));
+  const conversationId = sent.rows[0].conversation_id;
+  const [m1, m2, m3] = (await db.query(
+    'SELECT id FROM public.messages WHERE conversation_id = $1 ORDER BY created_at, id',
+    [conversationId]
+  )).rows.map(row => row.id);
+  const mark = messageId =>
+    db.query('SELECT * FROM public.mark_conversation_read($1, $2)', [conversationId, messageId]);
+
+  await asUser(db, volunteer, async () => {
+    // First-time creation at an older message, then a newer tab's write.
+    assert.equal((await mark(m1)).rows[0].last_read_message_id, m1);
+    const newest = (await mark(m3)).rows[0];
+    assert.equal(newest.last_read_message_id, m3);
+
+    // A stale request (M2, M3 itself, then M1) returns the stored row unchanged.
+    for (const stale of [m2, m3, m1]) {
+      const result = (await mark(stale)).rows[0];
+      assert.equal(result.last_read_message_id, m3);
+      assert.equal(result.last_read_at.getTime(), newest.last_read_at.getTime());
+    }
+    const listed = await db.query('SELECT * FROM public.list_conversations()');
+    assert.equal(Number(listed.rows[0].unread_count), 0);
+
+    // NULL target is idempotent once a cursor exists.
+    assert.equal(
+      (await db.query('SELECT * FROM public.mark_conversation_read($1, NULL)', [conversationId]))
+        .rows[0].last_read_message_id,
+      m3
+    );
+  });
+
+  // A cursor cleared by message deletion (on delete set null) can advance again.
+  await db.query('DELETE FROM public.messages WHERE id = $1', [m3]);
+  await asUser(db, volunteer, async () => {
+    assert.equal((await mark(m1)).rows[0].last_read_message_id, m1);
+    assert.equal((await mark(m2)).rows[0].last_read_message_id, m2);
+  });
+  assert.equal(
+    (await db.query('SELECT count(*)::int AS n FROM public.conversation_reads')).rows[0].n,
+    1
+  );
+});
+
 test('setup rerun preserves conversations messages and read cursors', async t => {
   const db = await fixture(t);
   const app = await createApplication(db);

@@ -554,8 +554,6 @@ as $$
 declare
   v_uid uuid := auth.uid();
   v_target public.messages;
-  v_existing public.conversation_reads;
-  v_existing_msg public.messages;
   v_result public.conversation_reads;
 begin
   if v_uid is null or not public.is_conversation_participant(p_conversation_id) then
@@ -582,37 +580,23 @@ begin
   end if;
 
   if v_target.id is null then
+    insert into public.conversation_reads (conversation_id, user_id, last_read_message_id, last_read_at)
+    values (p_conversation_id, v_uid, null, now())
+    on conflict (conversation_id, user_id) do nothing;
+
     select r.* into v_result
     from public.conversation_reads r
     where r.conversation_id = p_conversation_id
       and r.user_id = v_uid;
 
-    if v_result.user_id is null then
-      insert into public.conversation_reads (conversation_id, user_id, last_read_message_id, last_read_at)
-      values (p_conversation_id, v_uid, null, now())
-      returning * into v_result;
-    end if;
-
     return v_result;
   end if;
 
-  select r.* into v_existing
-  from public.conversation_reads r
-  where r.conversation_id = p_conversation_id
-    and r.user_id = v_uid;
-
-  if v_existing.last_read_message_id is not null then
-    select m.* into v_existing_msg
-    from public.messages m
-    where m.id = v_existing.last_read_message_id;
-
-    if v_existing_msg.id is not null
-       and (v_target.created_at, v_target.id)
-         <= (v_existing_msg.created_at, v_existing_msg.id) then
-      return v_existing;
-    end if;
-  end if;
-
+  -- The forward-only check is part of the write (#84). ON CONFLICT DO UPDATE locks
+  -- the existing row and evaluates WHERE against its latest committed version, so an
+  -- overlapping request (another tab) that already advanced the cursor, or created
+  -- it first, cannot be overwritten by an older target. A stored message this
+  -- statement cannot see is newer than its snapshot, so the cursor is kept.
   insert into public.conversation_reads (
     conversation_id,
     user_id,
@@ -628,7 +612,21 @@ begin
   on conflict (conversation_id, user_id) do update
     set last_read_message_id = excluded.last_read_message_id,
         last_read_at = excluded.last_read_at
+    where public.conversation_reads.last_read_message_id is null
+       or exists (
+         select 1
+         from public.messages cur
+         where cur.id = public.conversation_reads.last_read_message_id
+           and (cur.created_at, cur.id) < (v_target.created_at, v_target.id)
+       )
   returning * into v_result;
+
+  if v_result.user_id is null then
+    select r.* into v_result
+    from public.conversation_reads r
+    where r.conversation_id = p_conversation_id
+      and r.user_id = v_uid;
+  end if;
 
   return v_result;
 end;
