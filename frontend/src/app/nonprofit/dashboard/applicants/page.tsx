@@ -8,7 +8,6 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import PageHeader from "@/components/layout/PageHeader";
 import StatusBadge from "@/components/applications/StatusBadge";
 import EmailApplicantForm from "@/components/applications/EmailApplicantForm";
-import { messageLink } from "@/lib/messaging";
 import {
   Application,
   ApplicationStatus,
@@ -399,15 +398,12 @@ function ApplicantsDashboard() {
                     <p role="status" className="text-sm text-[#475569]">Saving decision...</p>
                   )}
 
-                  <div className="flex flex-wrap gap-3 border-t border-[#E2E8F0] pt-6">
-                    <Link href={messageLink(selected.id)} className="w-full text-sm font-semibold text-[#114160] underline">
-                      {selected.status === "rejected" ? "View conversation" : "Message volunteer"}
-                    </Link>
+                  <div aria-label="Application decision and resume actions" className="grid grid-cols-1 gap-3 border-t border-[#E2E8F0] pt-6 sm:grid-cols-2 xl:grid-cols-3">
                     <button
                       type="button"
                       disabled={updatingId !== null || selected.status === "approved"}
                       onClick={() => updateStatus(selected, "approved")}
-                      className="flex-1 rounded-md bg-[#114160] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#092130] disabled:cursor-not-allowed disabled:opacity-50"
+                      className="min-h-11 rounded-lg bg-[#114160] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#092130] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2182BF] disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       Approve
                     </button>
@@ -415,7 +411,7 @@ function ApplicantsDashboard() {
                       type="button"
                       disabled={updatingId !== null || selected.status === "rejected"}
                       onClick={() => updateStatus(selected, "rejected")}
-                      className="flex-1 rounded-md border border-red-200 bg-red-50 px-5 py-2.5 text-sm font-semibold text-red-600 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="min-h-11 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       Reject
                     </button>
@@ -423,7 +419,7 @@ function ApplicantsDashboard() {
                       type="button"
                       disabled={!selected.resume_path}
                       onClick={() => downloadResume(selected)}
-                      className="flex-1 rounded-md border border-[#114160] bg-white px-5 py-2.5 text-sm font-semibold text-[#114160] transition hover:bg-[#D3E6F2] disabled:cursor-not-allowed disabled:opacity-50"
+                      className="message-action min-h-11"
                     >
                       Download Resume
                     </button>
