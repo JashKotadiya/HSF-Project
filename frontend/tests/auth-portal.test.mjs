@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setup, deferred } from './helpers/auth.mjs';
 
-for (const [role, selected, hint] of [
-  ['nonprofit', 'I am a Volunteer', 'I am an Organization'],
-  ['volunteer', 'I am an Organization', 'I am a Volunteer'],
+for (const [role, selected] of [
+  ['nonprofit', 'I am a Volunteer'],
+  ['volunteer', 'I am an Organization'],
 ]) {
   test(`${selected} rejects a ${role} account without redirecting`, async t => {
     const env = setup(t, { role });
@@ -13,7 +13,9 @@ for (const [role, selected, hint] of [
     env.ui.fill();
     await env.ui.submit();
     await env.ui.settle();
-    assert.ok(env.ui.text().includes(`Select "${hint}"`));
+    assert.ok(env.ui.text().includes('Invalid login credentials'));
+    assert.ok(!env.ui.text().includes('This is a volunteer account'));
+    assert.ok(!env.ui.text().includes('This is an organization account'));
     assert.deepEqual(env.redirects, []);
     assert.equal((await env.supabase.auth.getSession()).data.session, null);
     assert.equal(env.ui.find(node => node.type === 'button' && node.props.type === 'submit').props.disabled, false);
@@ -28,6 +30,25 @@ test('switching to the correct tab after a mismatch allows normal sign-in', asyn
   env.ui.click('I am an Organization');
   await env.ui.submit(); await env.ui.settle();
   assert.deepEqual(env.redirects, ['/nonprofit/dashboard']);
+});
+
+test('wrong passwords and both role mismatches render the same generic error', async t => {
+  const errors = [];
+  for (const [settings, tab] of [
+    [{ badPassword: true }, 'I am a Volunteer'],
+    [{ badPassword: true }, 'I am an Organization'],
+    [{ role: 'nonprofit' }, 'I am a Volunteer'],
+    [{ role: 'volunteer' }, 'I am an Organization'],
+  ]) {
+    const env = setup(t, settings);
+    await env.ui.settle(); env.ui.click(tab); env.ui.fill();
+    await env.ui.submit(); await env.ui.settle();
+    const error = env.ui.find(node => node.type === 'div' && node.props.className?.includes('border-red-200'));
+    errors.push(env.ui.text(error).trim());
+    assert.deepEqual(env.redirects, []);
+    assert.equal((await env.supabase.auth.getSession()).data.session, null);
+  }
+  assert.deepEqual(errors, Array(4).fill('Invalid login credentials'));
 });
 
 test('matching volunteer login still opens the volunteer project board', async t => {
@@ -49,7 +70,7 @@ test('role tabs and account mode cannot change while login validation is pending
   }
   assert.deepEqual(env.redirects, []);
   release.resolve(); await pending; await env.ui.settle();
-  assert.ok(env.ui.text().includes('organization account'));
+  assert.ok(env.ui.text().includes('Invalid login credentials'));
 });
 
 for (const [tab, role] of [['I am a Volunteer', 'volunteer'], ['I am an Organization', 'nonprofit']]) {

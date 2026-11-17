@@ -2,13 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setup, deferred } from './helpers/auth.mjs';
 
-for (const [role, selected, label] of [
-  ['nonprofit', 'volunteer', 'I am an Organization'],
-  ['volunteer', 'nonprofit', 'I am a Volunteer'],
+for (const [role, selected] of [
+  ['nonprofit', 'volunteer'],
+  ['volunteer', 'nonprofit'],
 ]) {
   test(`${role} credentials cannot activate a ${selected} login`, async t => {
     const env = setup(t, { role });
-    await assert.rejects(env.signInWithRole('account@example.test', 'password', selected), error => error.message.includes(label));
+    await assert.rejects(env.signInWithRole('account@example.test', 'password', selected), error => error.message === 'Invalid login credentials');
     assert.equal((await env.supabase.auth.getSession()).data.session, null);
     assert.ok(!env.events.includes('SIGNED_IN'));
     const logout = env.requests.find(request => request.path === '/auth/v1/logout');
@@ -44,7 +44,7 @@ test('no shared session is published while role verification is pending', async 
 
 test('the stored profile role takes precedence over conflicting signup metadata', async t => {
   const env = setup(t, { role: 'volunteer', metadataRole: 'nonprofit' });
-  await assert.rejects(env.signInWithRole('account@example.test', 'password', 'nonprofit'), /volunteer account/);
+  await assert.rejects(env.signInWithRole('account@example.test', 'password', 'nonprofit'), error => error.message === 'Invalid login credentials');
   assert.equal((await env.supabase.auth.getSession()).data.session, null);
 });
 
@@ -65,7 +65,7 @@ test('a missing profile can use signup metadata without rewriting the role', asy
 
 test('role lookup failures do not fall back to metadata or activate a session', async t => {
   const env = setup(t, { role: 'nonprofit', profileError: true });
-  await assert.rejects(env.signInWithRole('account@example.test', 'password', 'nonprofit'), /verify your account type/);
+  await assert.rejects(env.signInWithRole('account@example.test', 'password', 'nonprofit'), /Couldn't sign in\. Please try again\./);
   assert.equal((await env.supabase.auth.getSession()).data.session, null);
   assert.ok(!env.events.includes('SIGNED_IN'));
   assert.equal(env.requests.find(request => request.path === '/auth/v1/logout').search.get('scope'), 'local');
@@ -87,7 +87,7 @@ test('a failed session activation cleans up only the temporary sign-in', async t
 
 test('a logout failure still leaves a mismatched login unpublished', async t => {
   const env = setup(t, { role: 'nonprofit', logoutError: true });
-  await assert.rejects(env.signInWithRole('account@example.test', 'password', 'volunteer'), /organization account/);
+  await assert.rejects(env.signInWithRole('account@example.test', 'password', 'volunteer'), error => error.message === 'Invalid login credentials');
   assert.equal((await env.supabase.auth.getSession()).data.session, null);
   assert.ok(!env.events.includes('SIGNED_IN'));
 });
