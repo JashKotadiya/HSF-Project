@@ -11,7 +11,7 @@ Application deep links use `/messages?application=<application UUID>`. Both volu
 | `list_conversations` | None | Caller's conversations with unread counts and last-message preview. |
 | `get_application_conversation` | `p_application_id` | Context for one application. Does not create a conversation row. `conversation_id` may be null until the first send. |
 | `list_messages` | `p_conversation_id`, optional `p_before_created_at` + `p_before_id`, `p_page_size` | Newest page when cursors are omitted. Older pages use both before-cursors together. Messages are ordered by `(created_at, id)`. |
-| `send_application_message` | `p_application_id`, `p_body`, `p_client_message_id` | Creates the conversation on first send if needed. Retries with the same client id return the original message. |
+| `send_application_message` | `p_application_id`, `p_body`, `p_client_message_id` | Creates the conversation on first send if needed. Retries with the same client id return the original message. Bodies that are empty or contain only whitespace (spaces, tabs, line breaks) are rejected with `23514`. |
 | `mark_conversation_read` | `p_conversation_id`, optional `p_message_id` | Advances the caller's read cursor forward only. |
 
 The composer enforces a 3,000-character limit. The database allows 4,000 characters.
