@@ -73,10 +73,15 @@ export function mount(t, filename, options) {
         },
       },
       require(id) {
+        if (options.stubs && id in options.stubs) return options.stubs[id];
         if (id === 'react') return react;
         if (id === 'react/jsx-runtime') return { jsx, jsxs: jsx };
         if (id === 'next/link') return { __esModule: true, default: 'Link' };
-        if (id === 'next/navigation') return { useSearchParams: () => new URLSearchParams() };
+        if (id === 'next/navigation') return {
+          useSearchParams: () => new URLSearchParams(),
+          useRouter: () => options.router ?? { push() {} },
+          useParams: () => options.params ?? {},
+        };
         if (id === 'date-fns') return { formatDistanceToNow };
                 if (id === 'date-fns') return { formatDistanceToNow };
         if (id === '@supabase/supabase-js') return { FunctionsHttpError };
