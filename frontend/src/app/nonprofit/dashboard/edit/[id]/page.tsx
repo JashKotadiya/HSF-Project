@@ -8,6 +8,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { getMilestones, getSkills } from "@/lib/projects";
 import PageHeader from "@/components/layout/PageHeader";
 import ImageUploader from "@/components/media/ImageUploader";
+import CauseSelect from "@/components/projects/CauseSelect";
 
 export default function EditPost() {
   const router = useRouter();
@@ -110,7 +111,7 @@ export default function EditPost() {
       organization_name: orgName,
       logo_url: logoUrl,
       location,
-      cause,
+      cause: cause.trim(),
       skills_needed: cleanSkills,
       what_we_need: whatWeNeed,
       additional_details: additionalDetails,
@@ -123,12 +124,18 @@ export default function EditPost() {
       org_fun_fact: orgFunFact,
     };
 
-    const { error } = isNew
-      ? await supabase.from("posts").insert({ user_id: userId, ...payload })
-      : await supabase.from("posts").update(payload).eq("id", postId);
+    // Only update a project this organization owns. Zero updated rows means the
+    // project was removed or belongs to another organization; keep the form as-is.
+    const { data: saved, error } = isNew
+      ? await supabase.from("posts").insert({ user_id: userId, ...payload }).select("id")
+      : await supabase.from("posts").update(payload).eq("id", postId).eq("user_id", userId).select("id");
 
-    if (error) {
-      setSaveError(`Couldn't save the project: ${error.message}`);
+    if (error || !saved || saved.length === 0) {
+      setSaveError(
+        error
+          ? `Couldn't save the project: ${error.message}`
+          : "Couldn't save the project because it no longer exists or belongs to another organization. Your changes are still here."
+      );
       setSaving(false);
       return;
     }
@@ -270,17 +277,7 @@ export default function EditPost() {
                 />
               </div>
 
-              <div>
-                <label className="mb-1 block text-sm font-semibold text-[#092130]">
-                  Cause (e.g. Human Services)
-                </label>
-                <input
-                  type="text"
-                  value={cause}
-                  onChange={(e) => setCause(e.target.value)}
-                  className="w-full rounded-md border border-[#CBD5E1] bg-white px-3 py-2 text-sm text-[#0F172A] outline-none transition focus:border-[#114160] focus:ring-1 focus:ring-[#114160]"
-                />
-              </div>
+              <CauseSelect id="project-cause" value={cause} onChange={setCause} />
 
               <div className="sm:col-span-2">
                 <label className="mb-1 block text-sm font-semibold text-[#092130]">
@@ -330,7 +327,7 @@ export default function EditPost() {
           {/* Skills */}
           <section>
             <h2 className="mb-4 text-lg font-bold text-[#092130] border-b border-[#E2E8F0] pb-2">
-              Skills Needed
+              Technical Skills Needed
             </h2>
             <div className="space-y-3">
               {skills.map((skill, index) => (
