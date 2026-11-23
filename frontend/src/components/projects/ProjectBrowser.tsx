@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import ProjectCard from "@/components/projects/ProjectCard";
 import ProjectFilters, { Filters } from "@/components/projects/ProjectFilters";
+import RecommendedProjects from "@/components/projects/RecommendedProjects";
 import { useAuth } from "@/components/auth/AuthProvider";
 import supabase from "@/lib/supabase";
 import type { ApplicationStatus } from "@/lib/applications";
@@ -194,6 +195,12 @@ export default function ProjectBrowser({ projects }: { projects: Project[] }) {
             </button>
           </div>
         )}
+
+        <RecommendedProjects
+          applicationStatuses={ownApplications?.statuses}
+          checkingApplications={checkingApplications}
+          applicationError={ownApplications?.error}
+        />
 
         {projectsError && (
           <div role="alert" className="mb-6 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">

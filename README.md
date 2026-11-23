@@ -64,6 +64,7 @@ The scripts in `supabase/` extend that existing schema:
 - [volunteer_profiles.sql](supabase/volunteer_profiles.sql) adds editable profile details and resume policies.
 - [interests.sql](supabase/interests.sql) adds the shared cause-category list and private saved volunteer preferences. Run it after `profiles_signup.sql`. Existing project causes are retained and registered, and new project causes are registered automatically.
 - [search_projects.sql](supabase/search_projects.sql) provides cause/skill/status/keyword filtering and stable server-side sorting and pagination. It replaces the earlier search signatures while preserving the original five positional arguments and named calls.
+- [recommend_projects.sql](supabase/recommend_projects.sql) ranks Active projects for a signed-in volunteer using interests, skills, and similar-profile participation. See [docs/matching-algorithm.md](docs/matching-algorithm.md).
 
 Apply `interests.sql` and the updated `search_projects.sql` **before deploying the frontend changes for PR #81**. Both scripts run in transactions and can be rerun. Without the updated search function, the browser shows a retryable error rather than returning incomplete matches. Volunteers save their preferences in the **Interests / Cause Areas** section of their profile; those selections are independent of technical skills.
 
