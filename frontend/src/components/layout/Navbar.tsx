@@ -13,12 +13,14 @@ const NAV_LINKS: Record<AppRole, { href: string; label: string }[]> = {
     { href: "/volunteer/projects", label: "My Projects" },
     { href: "/volunteer/profile", label: "My Profile" },
     { href: "/messages", label: "Messages" },
+    { href: "/help", label: "Help" },
   ],
   nonprofit: [
     { href: "/nonprofit/dashboard", label: "My Projects" },
     { href: "/nonprofit/dashboard/applicants", label: "Applicants" },
     { href: "/nonprofit/settings", label: "Settings" },
     { href: "/messages", label: "Messages" },
+    { href: "/help", label: "Help" },
   ],
 };
 

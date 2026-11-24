@@ -21,7 +21,7 @@ export function loadFunction(name, { env, fetch }) {
 
   let handler;
   vm.runInNewContext(compiled, {
-    exports: {}, console, Response, Request, Headers, URL, TextEncoder, fetch,
+    exports: {}, console, Response, Request, Headers, URL, TextEncoder, AbortController, setTimeout, clearTimeout, fetch,
     Deno: { env: { get: key => env[key] }, serve: fn => { handler = fn; } },
     require(id) {
       if (id === 'npm:@supabase/supabase-js@2') {
@@ -47,9 +47,9 @@ export function loadFunction(name, { env, fetch }) {
 // What identifies a row, for inserts that must not create a duplicate.
 const PRIMARY_KEYS = { email_deliveries: ['application_id', 'kind'] };
 
-export function createBackend({ tables = {}, users = {}, sessions = {}, emailFailures = [], failEmailsTo = new Set(), authFailures = [], tableFailures = [], beforeRequest, onChange } = {}) {
+export function createBackend({ tables = {}, users = {}, sessions = {}, emailFailures = [], failEmailsTo = new Set(), authFailures = [], tableFailures = [], externals = {}, rpc = {}, rpcFailures = [], beforeRequest, onChange } = {}) {
   const rows = Object.fromEntries(Object.entries(tables).map(([name, list]) => [name, structuredClone(list)]));
-  const requests = [], emails = [], writes = [];
+  const requests = [], emails = [], writes = [], external = [], rpcCalls = [];
   let emailAttempts = 0;
 
   const matches = (row, searchParams) => [...searchParams].every(([key, value]) => {
@@ -77,6 +77,23 @@ export function createBackend({ tables = {}, users = {}, sessions = {}, emailFai
       if (emailFailures.includes(attempt) || failEmailsTo.has(body.to)) return jsonResponse({ message: 'provider down' }, 500);
       emails.push({ ...body, headers });
       return jsonResponse({ id: `email-${emails.length}` });
+    }
+
+    // Other services the function calls by hostname (for example an AI provider).
+    // `externals` maps a hostname to a handler that returns the Response (or throws).
+    if (externals[url.hostname]) {
+      const call = { url, method, headers, body, signal: init.signal };
+      external.push(call);
+      return externals[url.hostname](call);
+    }
+
+    // Database functions (RPC): `rpc` maps a function name to a handler for its arguments.
+    const rpcName = url.pathname.match(/^\/rest\/v1\/rpc\/([^/]+)$/)?.[1];
+    if (rpcName) {
+      rpcCalls.push({ name: rpcName, args: body });
+      if (rpcFailures.includes(rpcName)) return jsonResponse({ message: `${rpcName} unavailable` }, 500);
+      if (!rpc[rpcName]) throw new Error(`Unexpected RPC in test backend: ${rpcName}`);
+      return jsonResponse(await rpc[rpcName](body));
     }
 
     // The signed-in user behind a bearer token (what supabase.auth.getUser(jwt) asks).
@@ -142,7 +159,7 @@ export function createBackend({ tables = {}, users = {}, sessions = {}, emailFai
   }
 
   return {
-    fetch, requests, emails, writes,
+    fetch, requests, emails, writes, external, rpcCalls,
     emailAttempts: () => emailAttempts,
     rows: name => rows[name],
     // Calls that reached the database or Auth (the email provider is tracked separately).
